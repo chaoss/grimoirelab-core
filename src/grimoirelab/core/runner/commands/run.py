@@ -19,13 +19,18 @@
 from __future__ import annotations
 
 import os
+import time
 import typing
 
 import click
 import django.core
 import django.core.wsgi
+import django_rq
+import requests
+import redis.exceptions
 
 from django.conf import settings
+from django.db import connections, OperationalError
 
 if typing.TYPE_CHECKING:
     from click import Context
@@ -60,6 +65,8 @@ def server(ctx: Context, devel: bool, clear_tasks: bool):
     should be run with a reverse proxy. If you activate the '--dev' flag,
     a HTTP server will be run instead.
     """
+    wait_for_services(wait_opensearch=False)
+
     env = os.environ
 
     env["UWSGI_ENV"] = f"DJANGO_SETTINGS_MODULE={ctx.obj['cfg']}"
@@ -114,6 +121,8 @@ def eventizers(workers: int):
     Workers get jobs from the GRIMOIRELAB_Q_EVENTIZER_JOBS queue defined
     in the configuration file.
     """
+    wait_for_services(wait_opensearch=False)
+
     django.core.management.call_command(
         'rqworker-pool', settings.GRIMOIRELAB_Q_EVENTIZER_JOBS,
         num_workers=workers
@@ -137,6 +146,8 @@ def archivists(workers: int):
     Workers get jobs from the GRIMOIRELAB_Q_ARCHIVIST_JOBS queue defined
     in the configuration file.
     """
+    wait_for_services()
+
     django.core.management.call_command(
         'rqworker-pool', settings.GRIMOIRELAB_Q_ARCHIVIST_JOBS,
         num_workers=workers
@@ -191,3 +202,63 @@ def create_background_tasks(clear_tasks: bool):
     elif workers < current:
         tasks = StorageTask.objects.all()[workers:]
         tasks.update(burst=True)
+
+
+def wait_for_services(
+        delay: int = 10,
+        wait_database: bool = True,
+        wait_redis: bool = True,
+        wait_opensearch: bool = True
+):
+    """Wait for services to be available before starting"""
+
+    if wait_database:
+        _wait_for_database(delay)
+
+    if wait_redis:
+        _wait_for_redis(delay)
+
+    if wait_opensearch:
+        _wait_for_opensearch(delay)
+
+
+def _wait_for_database(delay: int = 10):
+    """Wait for the database to be available before starting"""
+
+    while True:
+        try:
+            db_conn = connections['default']
+            if db_conn:
+                db_conn.cursor()
+                db_conn.close()
+                break
+        except OperationalError as e:
+            click.echo(f"Database connection not ready {e.__cause__}, retrying in {delay} seconds...")
+            time.sleep(delay)
+
+
+def _wait_for_redis(delay: int = 10):
+    """Wait for Redis to be available before starting"""
+
+    while True:
+        try:
+            redis_conn = django_rq.get_connection(settings.GRIMOIRELAB_Q_EVENTIZER_JOBS)
+            redis_conn.ping()
+            break
+        except redis.exceptions.ConnectionError as e:
+            click.echo(f"Redis connection not ready, retrying in {delay} seconds...")
+            time.sleep(delay)
+
+
+def _wait_for_opensearch(delay: int = 10):
+    """Wait for OpenSearch to be available before starting"""
+
+    while True:
+        try:
+            r = requests.get(settings.GRIMOIRELAB_ARCHIVIST['STORAGE_URL'],
+                         verify=settings.GRIMOIRELAB_ARCHIVIST['STORAGE_VERIFY_CERT'])
+            r.raise_for_status()
+            break
+        except (requests.exceptions.ConnectionError, requests.HTTPError) as e:
+            click.echo(f"OpenSearch connection not ready, retrying in {delay} seconds...")
+            time.sleep(delay)
