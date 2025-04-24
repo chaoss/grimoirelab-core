@@ -60,7 +60,7 @@ $ pip install -e .
 ```
 
 #### Poetry
-We use [poetry](https://python-poetry.org/) for dependency management and 
+We use [poetry](https://python-poetry.org/) for dependency management and
 packaging. You can install it following its [documentation](https://python-poetry.org/docs/#installation).
 Once you have installed it, you can install grimoirelab-core and the dependencies
 in a project isolated environment using:
@@ -126,6 +126,9 @@ environment variables.
 
 GrimoireLab core comes with a comprehensive list of unit tests
 
-```
+```shell
 (.venv)$ ./manage.py test --settings=config.settings.testing
 ```
+
+Set the environment variable `GRIMOIRELAB_TESTING_VERBOSE` to activate the
+verbose mode.
