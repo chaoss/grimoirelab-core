@@ -27,11 +27,15 @@ from uuid import uuid4
 
 import django_rq
 import redis
+import structlog
 
 from .consumer import Consumer
 
 
 ConsumerData = namedtuple("ConsumerData", ["name", "pid", "process"])
+
+
+logger = structlog.get_logger(__name__)
 
 
 class ConsumerPool:
@@ -189,7 +193,7 @@ class ConsumerPool:
                 self._consumers.pop(name)
 
     def _create_logger(self):
-        logger = logging.getLogger(self.__class__.__name__)
+        logger = structlog.get_logger(self.__class__.__name__)
         logger.setLevel(self.log_level)
         return logger
 
@@ -241,4 +245,4 @@ def _run_consumer(
         consumer = consumer_class(connection=connection, *args, **kwargs)
         consumer.start(burst=kwargs.get("burst", False))
     except Exception as e:
-        logging.error(f"Consumer {consumer_class.__name__} failed: {e}")
+        logger.error(f"Consumer {consumer_class.__name__} failed: {e}")
