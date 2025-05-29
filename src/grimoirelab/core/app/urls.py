@@ -19,5 +19,8 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("scheduler/", include(sched_urlpatterns)),
     path("datasources/", include(datasources_urlpatterns)),
-    re_path(r'^(?!static|scheduler).*$', TemplateView.as_view(template_name="index.html"))
+    path("api/v1/", include([
+        path("ecosystems/", include(ecosystems_urlpatterns))
+    ])),
+    re_path(r'^(?!static|scheduler|datasources).*$', TemplateView.as_view(template_name="index.html"))
 ]

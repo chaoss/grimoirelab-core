@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: generate-openapi-schema
+        name: Generate OpenAPI Schema
+        entry: bash -c 'python manage.py spectacular --file docs/schema.yml --validate'
+        language: system
+      - id: generate-redoc-html
+        name: Generate Redoc HTML
+        entry: bash -c 'npx @redocly/cli@latest build-docs docs/schema.yml --output=docs/index.html'
+        language: system
+      - id: commit-docs
+        name: Commit docs files
+        entry: bash -c 'git add docs/schema.yml docs/index.html'
+        language: system

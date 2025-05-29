@@ -17,6 +17,8 @@
 #
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
+from rest_framework import serializers
+from drf_spectacular.utils import extend_schema
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -25,6 +27,19 @@ from .models import Repository
 from grimoirelab.core.scheduler.scheduler import schedule_task
 
 
+class RepositoryInputSerializer(serializers.Serializer):
+    uri = serializers.CharField()
+    datasource_type = serializers.CharField()
+    datasource_category = serializers.CharField()
+
+
+class RepositoryResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    task_id = serializers.UUIDField()
+    message = serializers.CharField()
+
+
+@extend_schema(request=RepositoryInputSerializer, responses=RepositoryResponseSerializer)
 @api_view(['POST'])
 def add_repository(request):
     """Create a Repository and start a Task to fetch items
