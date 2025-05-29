@@ -25,4 +25,6 @@ from . import views
 urlpatterns = [
     re_path(r'^add_repository', views.add_repository, name='add_repository'),
     path('repositories/', api.RepositoryList.as_view()),
+    path('ecosystems/', api.EcosystemList.as_view()),
+    path('ecosystems/<str:name>/', api.EcosystemDetail.as_view()),
 ]
