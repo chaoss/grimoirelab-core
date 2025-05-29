@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from ..views import api_login
 
 from grimoirelab.core.scheduler.urls import urlpatterns as sched_urlpatterns
@@ -19,5 +20,7 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("scheduler/", include(sched_urlpatterns)),
     path("datasources/", include(datasources_urlpatterns)),
-    re_path(r'^(?!static|scheduler).*$', TemplateView.as_view(template_name="index.html"))
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/schema/ui/', SpectacularSwaggerView.as_view(url_name='schema')),
+    re_path(r'^(?!static|scheduler|datasources).*$', TemplateView.as_view(template_name="index.html"))
 ]
