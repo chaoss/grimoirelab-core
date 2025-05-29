@@ -23,7 +23,7 @@ from django.db.models import (
 )
 
 from ..scheduler.tasks.models import EventizerTask
-from ..models import BaseModel, MAX_SIZE_CHAR_FIELD
+from ..models import BaseModel, MAX_SIZE_CHAR_FIELD, MAX_SIZE_NAME_FIELD
 
 
 class Repository(BaseModel):
@@ -40,3 +40,14 @@ class Repository(BaseModel):
 
     class Meta:
         unique_together = ['uri', 'datasource_type', 'datasource_category']
+
+
+class Ecosystem(BaseModel):
+    """Base class for ecosystems
+
+    An ecosystem abstract set of projects which may share a common context.
+    It is composed of a unique name and an optional title and description.
+    """
+    name = CharField(unique=True, max_length=MAX_SIZE_NAME_FIELD)
+    title = CharField(max_length=MAX_SIZE_CHAR_FIELD, null=True)
+    description = CharField(max_length=MAX_SIZE_CHAR_FIELD, null=True)
