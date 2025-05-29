@@ -11,7 +11,7 @@ from rest_framework_simplejwt.views import (
 from ..views import api_login
 
 from grimoirelab.core.scheduler.urls import urlpatterns as sched_urlpatterns
-from grimoirelab.core.datasources.urls import urlpatterns as datasources_urlpatterns
+from grimoirelab.core.datasources.urls import datasources_urlpatterns, ecosystems_urlpatterns
 
 urlpatterns = [
     path("login", api_login, name="api_login"),
