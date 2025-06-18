@@ -250,6 +250,194 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/ecosystems/{ecosystem_name}/projects/{project_name}/children/:
+    get:
+      operationId: api_v1_ecosystems_projects_children_list
+      description: Returns a paginated list of a project's descendants (repositories
+        and subprojects).
+      parameters:
+      - in: path
+        name: ecosystem_name
+        schema:
+          type: string
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - in: path
+        name: project_name
+        schema:
+          type: string
+        required: true
+      - name: size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: term
+        schema:
+          type: string
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProjectChildList'
+          description: ''
+  /api/v1/ecosystems/{ecosystem_name}/projects/{project_name}/datasets/:
+    get:
+      operationId: api_v1_ecosystems_projects_datasets_list
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+      - in: query
+        name: datasource
+        schema:
+          type: string
+      - in: path
+        name: ecosystem_name
+        schema:
+          type: string
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - in: path
+        name: project_name
+        schema:
+          type: string
+        required: true
+      - name: size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: uri
+        schema:
+          type: string
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDataSetList'
+          description: ''
+    post:
+      operationId: api_v1_ecosystems_projects_datasets_create
+      parameters:
+      - in: path
+        name: ecosystem_name
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: project_name
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDataSet'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateDataSet'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateDataSet'
+        required: true
+      security:
+      - cookieAuth: []
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataSet'
+          description: ''
+  /api/v1/ecosystems/{ecosystem_name}/projects/{project_name}/datasets/{id}:
+    get:
+      operationId: api_v1_ecosystems_projects_datasets_retrieve
+      parameters:
+      - in: path
+        name: ecosystem_name
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: project_name
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataSetDetail'
+          description: ''
+    delete:
+      operationId: api_v1_ecosystems_projects_datasets_destroy
+      parameters:
+      - in: path
+        name: ecosystem_name
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: project_name
+        schema:
+          type: string
+        required: true
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/ecosystems/{name}/:
     get:
       operationId: api_v1_ecosystems_retrieve
@@ -350,58 +538,6 @@ paths:
       responses:
         '204':
           description: No response body
-  /datasources/add_repository:
-    post:
-      operationId: datasources_add_repository_create
-      description: |-
-        Create a Repository and start a Task to fetch items
-
-        The body should contain a JSON similar to:
-        {
-            'uri': "<repository_uri>",
-            'datasource_type': 'git',
-            'datasource_category': 'commit',
-            'scheduler': {
-                'job_interval': 86400,
-                'job_max_retries': 3,
-            }
-        }
-      tags:
-      - datasources
-      security:
-      - cookieAuth: []
-      - jwtAuth: []
-      responses:
-        '200':
-          description: No response body
-  /datasources/repositories/:
-    get:
-      operationId: datasources_repositories_list
-      parameters:
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: size
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      tags:
-      - datasources
-      security:
-      - cookieAuth: []
-      - jwtAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedEventizerRepositoryListList'
-          description: ''
   /login:
     post:
       operationId: login_create
@@ -675,6 +811,68 @@ paths:
           description: ''
 components:
   schemas:
+    CreateDataSet:
+      type: object
+      properties:
+        uri:
+          type: string
+        datasource_type:
+          type: string
+        category:
+          type: string
+        scheduler: {}
+      required:
+      - category
+      - datasource_type
+      - uri
+    DataSet:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: string
+          maxLength: 128
+        repository:
+          allOf:
+          - $ref: '#/components/schemas/Repository'
+          readOnly: true
+        task:
+          type: string
+          readOnly: true
+      required:
+      - category
+      - id
+      - repository
+      - task
+    DataSetDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: string
+          maxLength: 128
+        repository:
+          allOf:
+          - $ref: '#/components/schemas/Repository'
+          readOnly: true
+        task:
+          allOf:
+          - $ref: '#/components/schemas/EventizerTask'
+          readOnly: true
+        project:
+          allOf:
+          - $ref: '#/components/schemas/Project'
+          readOnly: true
+      required:
+      - category
+      - id
+      - project
+      - repository
+      - task
     Ecosystem:
       type: object
       properties:
@@ -766,25 +964,6 @@ components:
       required:
       - logs
       - uuid
-    EventizerRepositoryList:
-      type: object
-      properties:
-        uri:
-          type: string
-          maxLength: 128
-        datasource_type:
-          type: string
-          maxLength: 128
-        datasource_category:
-          type: string
-          maxLength: 128
-        task:
-          $ref: '#/components/schemas/EventizerTaskList'
-      required:
-      - datasource_category
-      - datasource_type
-      - task
-      - uri
     EventizerTask:
       type: object
       properties:
@@ -868,6 +1047,29 @@ components:
       - last_jobs
       - status
       - uuid
+    PaginatedDataSetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataSet'
     PaginatedEcosystemList:
       type: object
       required:
@@ -914,29 +1116,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EventizerJobList'
-    PaginatedEventizerRepositoryListList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/EventizerRepositoryList'
     PaginatedEventizerTaskListList:
       type: object
       required:
@@ -960,6 +1139,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EventizerTaskList'
+    PaginatedProjectChildList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectChild'
     PaginatedProjectList:
       type: object
       required:
@@ -1019,6 +1221,9 @@ components:
           items:
             $ref: '#/components/schemas/Project'
           readOnly: true
+        datasets:
+          type: integer
+          readOnly: true
     Project:
       type: object
       properties:
@@ -1041,10 +1246,33 @@ components:
           items:
             type: string
           readOnly: true
+        datasets:
+          type: integer
+          readOnly: true
       required:
+      - datasets
       - id
       - name
       - subprojects
+    ProjectChild:
+      type: object
+      description: Returns different fields for a project or a repository.
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        title:
+          type: string
+        uri:
+          type: string
+        subprojects:
+          type: integer
+        datasets:
+          type: integer
+      required:
+      - datasets
+      - type
     ProjectDetail:
       type: object
       properties:
@@ -1066,11 +1294,31 @@ components:
           items:
             $ref: '#/components/schemas/Project'
           readOnly: true
+        datasets:
+          type: integer
+          readOnly: true
       required:
+      - datasets
       - id
       - name
       - parent_project
       - subprojects
+    Repository:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        uri:
+          type: string
+          maxLength: 128
+        datasource_type:
+          type: string
+          maxLength: 128
+      required:
+      - datasource_type
+      - id
+      - uri
     TokenObtainPair:
       type: object
       properties:

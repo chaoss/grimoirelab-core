@@ -16,20 +16,19 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-from django.urls import path, re_path
+from django.urls import path
 
 from . import api
-from . import views
 
-
-datasources_urlpatterns = [
-    re_path(r'^add_repository', views.add_repository, name='add_repository'),
-    path('repositories/', api.RepositoryList.as_view()),
-]
 
 ecosystems_urlpatterns = [
     path('', api.EcosystemList.as_view(), name='ecosystem-list'),
     path('<str:name>/', api.EcosystemDetail.as_view(), name='ecosystem-detail'),
     path('<str:ecosystem_name>/projects/', api.ProjectList.as_view(), name='projects-list'),
     path('<str:ecosystem_name>/projects/<str:name>', api.ProjectDetail.as_view(), name='projects-detail'),
+    path('<str:ecosystem_name>/projects/<str:project_name>/children/', api.ProjectChildrenList.as_view(), name='children-list'),
+    path('<str:ecosystem_name>/projects/<str:project_name>/datasets/', api.DataSetList.as_view(), name='dataset-list'),
+    path('<str:ecosystem_name>/projects/<str:project_name>/datasets/<int:id>',
+         api.DataSetDetail.as_view(),
+         name='dataset-detail'),
 ]

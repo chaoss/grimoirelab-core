@@ -16,13 +16,16 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from grimoirelab.core.datasources.models import Ecosystem, Project
+from grimoirelab.core.datasources.models import Ecosystem, Project, Repository, DataSet
+from grimoirelab.core.scheduler.tasks.models import EventizerTask
 
 INVALID_NAME_ERROR = ('Field may only contain alphanumeric characters or hyphens. '
                       'It may only start with a letter and cannot end with a hyphen.')
@@ -614,6 +617,431 @@ class ProjectDetailApiTest(APITestCase):
         self.client.force_authenticate(user=None)
 
         url = reverse('projects-detail', kwargs={'ecosystem_name': 'example-ecosystem', 'name': 'example-project'})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['detail'], 'Authentication credentials were not provided.')
+
+
+class DataSetListApiTest(APITestCase):
+    """Unit tests for the DataSet API"""
+
+    def setUp(self):
+        user = get_user_model().objects.create(username='test', is_superuser=True)
+        self.client.force_authenticate(user=user)
+        self.ecosystem = Ecosystem.objects.create(name='ecosystem1')
+        self.project = Project.objects.create(name='project1', ecosystem=self.ecosystem)
+        self.task = EventizerTask.create_task(
+            task_args={'uri': 'uri'},
+            job_interval=86400,
+            job_max_retries=3,
+            datasource_type='git',
+            datasource_category='commit'
+        )
+        self.valid_data = {
+            'uri': 'https://example.com/repo.git',
+            'datasource_type': 'git',
+            'category': 'commit',
+            'scheduler': {
+                'job_interval': 86400,
+                'job_max_retries': 3,
+                'force_run': False
+            }
+        }
+
+    @patch('grimoirelab.core.datasources.api.schedule_task')
+    def test_create_dataset(self, mock_schedule_task):
+        """Test creating a dataset"""
+
+        mock_schedule_task.return_value = self.task
+        repository = Repository.objects.create(uri='https://example.com/repo.git', datasource_type='git')
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'project1'})
+        data = {
+            'uri': 'https://example.com/repo.git',
+            'datasource_type': 'git',
+            'category': 'commit',
+            'scheduler': {
+                'job_interval': 86400,
+                'job_max_retries': 3,
+                'force_run': False
+            }
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['category'], 'commit')
+        self.assertEqual(response.data['task'], self.task.uuid)
+        self.assertEqual(response.data['repository']['id'], repository.id)
+        self.assertEqual(response.data['repository']['uri'], 'https://example.com/repo.git')
+        self.assertEqual(response.data['repository']['datasource_type'], 'git')
+
+    @patch('grimoirelab.core.datasources.api.schedule_task')
+    def test_create_dataset_no_repo(self, mock_schedule_task):
+        """Test creating a repository for a dataset when it does not exist"""
+
+        mock_schedule_task.return_value = self.task
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'project1'})
+
+        response = self.client.post(url, self.valid_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['category'], 'commit')
+        self.assertEqual(response.data['task'], self.task.uuid)
+        self.assertEqual(response.data['repository']['uri'], 'https://example.com/repo.git')
+        self.assertEqual(response.data['repository']['datasource_type'], 'git')
+
+        repository = Repository.objects.get(uri='https://example.com/repo.git', datasource_type='git')
+        self.assertIsNotNone(repository)
+
+    def test_add_dataset_missing_parameters(self):
+        """Test adding a dataset with missing parameters"""
+
+        data = {
+            'datasource_type': 'git',
+            'category': 'commit',
+            'scheduler': {
+                'job_interval': 86400,
+                'job_max_retries': 3,
+                'force_run': False
+            }
+        }
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'project1'})
+        response = self.client.post(url, data, format='json')
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json(), {'uri': ['This field is required.']})
+
+    def test_add_dataset_already_exists(self):
+        """Test adding a dataset that already exists"""
+
+        repository = Repository.objects.create(
+            uri='https://example.com/repo.git',
+            datasource_type="git"
+        )
+        DataSet.objects.create(
+            project=self.project,
+            repository=repository,
+            category='commit',
+            task=self.task
+        )
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'project1'})
+        response = self.client.post(url, self.valid_data, format='json')
+
+        self.assertEqual(response.status_code, 422)
+        error = "Repository 'https://example.com/repo.git' with category 'commit' already exists in project."
+        self.assertEqual(response.json(), {'non_field_errors': [error]})
+
+    def test_add_dataset_authentication_required(self):
+        """Test adding a dataset without authentication"""
+
+        self.client.logout()
+
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'project1'})
+        response = self.client.post(url, self.valid_data, format='json')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"detail": "Authentication credentials were not provided."})
+
+    def test_project_dataset_list(self):
+        """Test that it returns a list of datasets for a project"""
+
+        repository = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        DataSet.objects.create(
+            project=self.project,
+            repository=repository,
+            category='category1',
+        )
+        DataSet.objects.create(
+            project=self.project,
+            repository=repository,
+            category='category2'
+        )
+        DataSet.objects.create(
+            project=self.project,
+            repository=repository,
+            category='category3'
+        )
+
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 3)
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 1)
+
+        dataset = response.data['results'][0]
+        self.assertEqual(dataset['category'], 'category1')
+        self.assertEqual(dataset['repository']['id'], repository.id)
+        self.assertEqual(dataset['repository']['uri'], repository.uri)
+        self.assertEqual(dataset['repository']['datasource_type'], repository.datasource_type)
+
+        dataset = response.data['results'][1]
+        self.assertEqual(dataset['category'], 'category2')
+        self.assertEqual(dataset['repository']['id'], repository.id)
+        self.assertEqual(dataset['repository']['uri'], repository.uri)
+        self.assertEqual(dataset['repository']['datasource_type'], repository.datasource_type)
+
+        dataset = response.data['results'][2]
+        self.assertEqual(dataset['category'], 'category3')
+        self.assertEqual(dataset['repository']['id'], repository.id)
+        self.assertEqual(dataset['repository']['uri'], repository.uri)
+        self.assertEqual(dataset['repository']['datasource_type'], repository.datasource_type)
+
+    def test_project_dataset_list_filter_category(self):
+        """Test that it returns a list of datasets for a project filtered by category"""
+
+        repository = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=repository, category='category1')
+        DataSet.objects.create(project=self.project, repository=repository, category='category2')
+        DataSet.objects.create(project=self.project, repository=repository, category='category3')
+
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url, {'category': 'category1'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 1)
+
+        dataset = response.data['results'][0]
+        self.assertEqual(dataset['category'], 'category1')
+        self.assertEqual(dataset['repository']['id'], repository.id)
+        self.assertEqual(dataset['repository']['uri'], repository.uri)
+        self.assertEqual(dataset['repository']['datasource_type'], repository.datasource_type)
+
+    def test_project_dataset_list_filter_datasource(self):
+        """Test that it returns a list of datasets for a project filtered by datasource type"""
+
+        repository1 = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=repository1, category='category1')
+        DataSet.objects.create(project=self.project, repository=repository1, category='category2')
+
+        repository2 = Repository.objects.create(uri='https://example.com/repo', datasource_type="github")
+        DataSet.objects.create(project=self.project, repository=repository2, category='category1')
+
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url, {'datasource': 'git'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 2)
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 1)
+
+        dataset = response.data['results'][0]
+        self.assertEqual(dataset['category'], 'category1')
+        self.assertEqual(dataset['repository']['id'], repository1.id)
+        self.assertEqual(dataset['repository']['uri'], repository1.uri)
+        self.assertEqual(dataset['repository']['datasource_type'], 'git')
+
+        dataset = response.data['results'][1]
+        self.assertEqual(dataset['category'], 'category2')
+        self.assertEqual(dataset['repository']['id'], repository1.id)
+        self.assertEqual(dataset['repository']['uri'], repository1.uri)
+        self.assertEqual(dataset['repository']['datasource_type'], 'git')
+
+    def test_project_dataset_list_filter_uri(self):
+        """Test that it returns a list of datasets for a project filtered by uri"""
+
+        repository1 = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=repository1, category='category1')
+        DataSet.objects.create(project=self.project, repository=repository1, category='category2')
+
+        repository2 = Repository.objects.create(uri='https://example.com/repo2.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=repository2, category='category1')
+
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url, {'uri': 'https://example.com/repo2.git'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 1)
+
+        dataset = response.data['results'][0]
+        self.assertEqual(dataset['category'], 'category1')
+        self.assertEqual(dataset['repository']['id'], repository2.id)
+        self.assertEqual(dataset['repository']['uri'], 'https://example.com/repo2.git')
+        self.assertEqual(dataset['repository']['datasource_type'], 'git')
+
+    def test_dataset_list_pagination(self):
+        """Test that it returns a paginated list of datasets"""
+
+        repository = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=repository, category='category1')
+        DataSet.objects.create(project=self.project, repository=repository, category='category2')
+        DataSet.objects.create(project=self.project, repository=repository, category='category3')
+
+        url = reverse('dataset-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url, {'page': 2, 'size': 2})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 3)
+        self.assertEqual(response.data['page'], 2)
+        self.assertEqual(response.data['total_pages'], 2)
+
+        dataset = response.data['results'][0]
+        self.assertEqual(dataset['category'], 'category3')
+        self.assertEqual(dataset['repository']['id'], repository.id)
+        self.assertEqual(dataset['repository']['uri'], 'https://example.com/repo.git')
+        self.assertEqual(dataset['repository']['datasource_type'], 'git')
+
+
+class DataSetDetailApiTest(APITestCase):
+    """Unit tests for the DataSet detail API"""
+
+    def setUp(self):
+        user = get_user_model().objects.create(username='test', is_superuser=True)
+        self.client.force_authenticate(user=user)
+        self.ecosystem = Ecosystem.objects.create(name='ecosystem1', title='Ecosystem 1')
+        self.project = Project.objects.create(name="example-project",
+                                              title="Example Project",
+                                              ecosystem=self.ecosystem)
+        self.repository = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        self.dataset = DataSet.objects.create(project=self.project, repository=self.repository, category='category1')
+
+    def test_get_dataset(self):
+        """Test that it returns a dataset"""
+
+        url = reverse('dataset-detail',
+                      kwargs={'ecosystem_name': self.ecosystem.name, 'project_name': self.project.name, 'id': self.dataset.id})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], self.dataset.id)
+        self.assertEqual(response.data['category'], 'category1')
+        self.assertEqual(response.data['task'], None)
+        self.assertEqual(response.data['repository']['id'], self.repository.id)
+        self.assertEqual(response.data['repository']['uri'], 'https://example.com/repo.git')
+        self.assertEqual(response.data['repository']['datasource_type'], 'git')
+        self.assertEqual(response.data['project']['id'], self.project.id)
+        self.assertEqual(response.data['project']['name'], 'example-project')
+        self.assertEqual(response.data['project']['title'], 'Example Project')
+        self.assertEqual(response.data['project']['parent_project'], None)
+        self.assertEqual(response.data['project']['subprojects'], [])
+
+    def test_dataset_not_found(self):
+        """Test if it returns an error if the dataset does not exist"""
+
+        url = reverse('dataset-detail',
+                      kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'example-project-2', 'id': self.dataset.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data['detail'], 'No Project matches the given query.')
+
+        url = reverse('dataset-detail',
+                      kwargs={'ecosystem_name': 'ecosystem1', 'project_name': 'example-project', 'id': 12345})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data['detail'], 'No DataSet matches the given query.')
+
+    def test_delete_dataset(self):
+        """Test that it deletes a dataset"""
+
+        url = reverse('dataset-detail',
+                      kwargs={'ecosystem_name': self.ecosystem.name, 'project_name': self.project.name, 'id': self.dataset.id})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        with self.assertRaises(ObjectDoesNotExist):
+            DataSet.objects.get(id=self.dataset.id)
+
+    def test_unauthenticated_request(self):
+        """Test that it returns an error if no credentials were provided"""
+
+        self.client.force_authenticate(user=None)
+
+        url = reverse('dataset-detail',
+                      kwargs={'ecosystem_name': self.ecosystem.name, 'project_name': self.project.name, 'id': self.dataset.id})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['detail'], 'Authentication credentials were not provided.')
+
+
+class ProjectChildrenApiTest(APITestCase):
+    """Unit tests for the ProjectChildren API"""
+
+    def setUp(self):
+        user = get_user_model().objects.create(username='test', is_superuser=True)
+        self.client.force_authenticate(user=user)
+        self.ecosystem = Ecosystem.objects.create(name='ecosystem1')
+        self.project = Project.objects.create(name='project1', ecosystem=self.ecosystem)
+
+        self.subproject1 = Project.objects.create(parent_project=self.project, name='subproject1', ecosystem=self.ecosystem)
+        Project.objects.create(parent_project=self.subproject1, name='subproject2', ecosystem=self.ecosystem)
+
+        self.repository1 = Repository.objects.create(uri='https://example.com/repo.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=self.repository1, category='category1')
+
+        self.repository2 = Repository.objects.create(uri='https://example.com/repo2.git', datasource_type="git")
+        DataSet.objects.create(project=self.project, repository=self.repository2, category='category1')
+        DataSet.objects.create(project=self.subproject1, repository=self.repository2, category='category1')
+
+    def test_project_children_list(self):
+        """Test that it returns a list of children for a project"""
+
+        url = reverse('children-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 3)
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 1)
+
+        project = response.data['results'][0]
+        self.assertEqual(project['id'], self.subproject1.id)
+        self.assertEqual(project['type'], 'project')
+        self.assertEqual(project['name'], 'subproject1')
+        self.assertEqual(project['subprojects'], 1)
+        self.assertEqual(project['datasets'], 1)
+
+        repository = response.data['results'][1]
+        self.assertEqual(repository['id'], self.repository1.id)
+        self.assertEqual(repository['type'], 'repository')
+        self.assertEqual(repository['uri'], 'https://example.com/repo.git')
+        self.assertEqual(repository['datasets'], 1)
+
+        repository = response.data['results'][2]
+        self.assertEqual(repository['id'], self.repository2.id)
+        self.assertEqual(repository['type'], 'repository')
+        self.assertEqual(repository['uri'], 'https://example.com/repo2.git')
+        self.assertEqual(repository['datasets'], 2)
+
+    def test_project_children_filter_term(self):
+        """Test that it returns a list of children for a project filtered by term"""
+
+        url = reverse('children-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url, {'term': 'repo'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 2)
+        self.assertEqual(response.data['page'], 1)
+        self.assertEqual(response.data['total_pages'], 1)
+
+        repository = response.data['results'][0]
+        self.assertEqual(repository['id'], self.repository1.id)
+        self.assertEqual(repository['type'], 'repository')
+        self.assertEqual(repository['uri'], 'https://example.com/repo.git')
+        self.assertEqual(repository['datasets'], 1)
+
+        repository = response.data['results'][1]
+        self.assertEqual(repository['id'], self.repository2.id)
+        self.assertEqual(repository['type'], 'repository')
+        self.assertEqual(repository['uri'], 'https://example.com/repo2.git')
+        self.assertEqual(repository['datasets'], 2)
+
+    def test_project_children_list_pagination(self):
+        """Test that it returns a paginated list of children for a project"""
+
+        url = reverse('children-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
+        response = self.client.get(url, {'page': 2, 'size': 2})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 3)
+        self.assertEqual(response.data['page'], 2)
+        self.assertEqual(response.data['total_pages'], 2)
+
+        repository = response.data['results'][0]
+        self.assertEqual(repository['id'], self.repository2.id)
+        self.assertEqual(repository['type'], 'repository')
+        self.assertEqual(repository['uri'], 'https://example.com/repo2.git')
+        self.assertEqual(repository['datasets'], 2)
+
+    def test_unauthenticated_request(self):
+        """Test that it returns an error if no credentials were provided"""
+
+        self.client.force_authenticate(user=None)
+
+        url = reverse('children-list', kwargs={'ecosystem_name': 'ecosystem1', 'project_name': self.project.name})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data['detail'], 'Authentication credentials were not provided.')
