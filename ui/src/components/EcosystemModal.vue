@@ -14,6 +14,7 @@
               hide-details
               persistent-placeholder
               required
+              @change="generateSlug(form.title, $refs.slug)"
             />
           </v-col>
         </v-row>
@@ -29,6 +30,7 @@
               persistent-hint
               persistent-placeholder
               required
+              ref="slug"
             />
           </v-col>
         </v-row>
@@ -59,6 +61,7 @@
 <script>
 import Cookies from 'js-cookie'
 import { useEcosystemStore } from '@/store'
+import { generateSlug } from '@/utils/datasources'
 
 export default {
   name: 'EcosystemModal',
@@ -101,7 +104,7 @@ export default {
   },
   setup() {
     const store = useEcosystemStore()
-    return { store }
+    return { store, generateSlug }
   }
 }
 </script>

@@ -16,6 +16,7 @@
               hide-details
               persistent-placeholder
               required
+              @change="generateSlug(form.title, $refs.slug)"
             />
           </v-col>
         </v-row>
@@ -32,6 +33,7 @@
               persistent-hint
               persistent-placeholder
               required
+              ref="slug"
             />
           </v-col>
         </v-row>
@@ -56,6 +58,7 @@
 </template>
 <script>
 import ProjectSelector from './ProjectSelector.vue'
+import { generateSlug } from '@/utils/datasources'
 
 export default {
   components: { ProjectSelector },
@@ -112,6 +115,7 @@ export default {
     }
   },
   methods: {
+    generateSlug,
     onClick() {
       if (this.edit) {
         this.onEdit()
