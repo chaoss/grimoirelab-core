@@ -122,15 +122,33 @@ const router = createRouter({
                       component: () => import('../views/Repo/NewRepo.vue')
                     },
                     {
-                      path: 'sbom',
-                      name: 'loadSbom',
-                      meta: {
-                        breadcrumb: {
-                          title: 'Load from SBoM',
-                          to: { name: 'loadSbom' }
+                      path: 'bulk',
+                      name: 'bulkCreate',
+                      component: () => import('../views/Repo/BulkCreate.vue'),
+                      children: [
+                        {
+                          path: 'github',
+                          name: 'github',
+                          meta: {
+                            breadcrumb: {
+                              title: 'GitHub',
+                              to: { name: 'github' }
+                            }
+                          },
+                          component: () => import('../views/Repo/GitHub.vue')
+                        },
+                        {
+                          path: 'sbom',
+                          name: 'loadSbom',
+                          meta: {
+                            breadcrumb: {
+                              title: 'Load from SBoM',
+                              to: { name: 'loadSbom' }
+                            }
+                          },
+                          component: () => import('../views/Repo/LoadSbom.vue')
                         }
-                      },
-                      component: () => import('../views/Repo/LoadSbom.vue')
+                      ]
                     }
                   ]
                 },
