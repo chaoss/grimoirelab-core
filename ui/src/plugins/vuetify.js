@@ -22,6 +22,8 @@ export default createVuetify({
           'on-background': '#1f2328',
           surface: '#ffffff',
           'on-surface': '#1f2328',
+          'surface-variant': '#dee3eb',
+          'on-surface-variant': '#42474e',
           running: '#f4bc00',
           new: '#3fa500',
           enqueued: '#003756',
