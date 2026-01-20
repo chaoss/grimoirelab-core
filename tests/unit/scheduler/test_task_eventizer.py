@@ -22,6 +22,7 @@ import os
 import pickle
 import shutil
 import tempfile
+from unittest.mock import patch
 
 import rq
 import perceval.backend
@@ -44,7 +45,7 @@ class TestChroniclerJob(GrimoireLabTestCase):
         shutil.rmtree(self.tmp_path)
         super().tearDown()
 
-    def test_job(self):
+    def test_git_job(self):
         """Test if events are generated using the Git backend"""
 
         job_args = {
@@ -204,6 +205,86 @@ class TestChroniclerJob(GrimoireLabTestCase):
             self.assertEqual(event["id"], expected[i][0])
             self.assertEqual(event["type"], expected[i][1])
             self.assertEqual(event["source"], "http://example.com/")
+
+    @patch("grimoirelab.core.scheduler.tasks.chronicler.perceval.backend.BackendItemsGenerator")
+    def test_github_job(self, mock_backend_items_generator):
+        """Test if events are generated using the GitHub backend"""
+
+        with open(os.path.join(self.dir, "data/github_issues.json"), "r") as f:
+            github_issues_data = json.load(f)
+
+        # Return value under .items
+        mock_backend_items_generator.return_value.items = github_issues_data
+
+        job_args = {
+            "datasource_type": "github",
+            "datasource_category": "issue",
+            "events_stream": "events",
+            "stream_max_length": 500,
+            "job_args": {
+                "owner": "example_user",
+                "repository": "tmp",
+                "from_date": "2020-01-01T00:00:00Z",
+            },
+        }
+
+        q = rq.Queue("test-queue", job_class=GrimoireLabJob, connection=self.conn, is_async=False)
+        job = q.enqueue(
+            f=chronicler_job,
+            result_ttl=100,
+            job_timeout=120,
+            job_id="chonicler-github",
+            **job_args,
+        )
+
+        # Use job._result instead of job.return_value() because
+        # the mocked backend fail to produce a return value
+        result = job._result
+
+        # Check job result
+        self.assertEqual(result.job_id, job.get_id())
+        self.assertEqual(result.backend, "github")
+        self.assertEqual(result.category, "issue")
+
+        expected = [
+            ("a548ead04e53ace59cbfc271849b23d00dc9d251", "org.grimoirelab.events.github.issue"),
+            ("c4ca608a321600f4353fcf6265838d30ac23e67c", "org.grimoirelab.events.github.comment"),
+            (
+                "f5e97ba626a64961846512f4024c42cd802179e3",
+                "org.grimoirelab.events.github.comment.author",
+            ),
+            ("f2f4bc38d02975f2fc0553ec4def64b7be49bfbb", "org.grimoirelab.events.github.author"),
+            ("7c2a2b2bfe9625cd69654942612c8b1e47ab55e7", "org.grimoirelab.events.github.assignee"),
+            ("7c2a2b2bfe9625cd69654942612c8b1e47ab55e7", "org.grimoirelab.events.github.assignee"),
+            (
+                "9654465e0137fa44acbec0ea546a83a759abf462",
+                "org.grimoirelab.events.github.pull_request",
+            ),
+            ("4fd4b38aecd9c37177245534d07ec82bb37c69ee", "org.grimoirelab.events.github.author"),
+            ("c310eb027d3a267a59bf729e475705b1f30f66cf", "org.grimoirelab.events.github.assignee"),
+            ("c310eb027d3a267a59bf729e475705b1f30f66cf", "org.grimoirelab.events.github.assignee"),
+            ("6d29718200ba6e09771b467d19ac2d2e25373b65", "org.grimoirelab.events.github.issue"),
+            ("c08e08c28d9acb6616596ab6c3ad893120fd6323", "org.grimoirelab.events.github.comment"),
+            (
+                "6ed3e671b28317fa98bb593c71de3f73f6e603c3",
+                "org.grimoirelab.events.github.comment.author",
+            ),
+            ("45d0474e3f0aca9019f5a5a4fc7e961f9004fc41", "org.grimoirelab.events.github.author"),
+            (
+                "33d506af9577a889786079a2802e275bc8c7a438",
+                "org.grimoirelab.events.github.pull_request",
+            ),
+            ("730c9d767fc81749ad9c31e69f65632f6833c343", "org.grimoirelab.events.github.author"),
+        ]
+
+        # Check generated events
+        events = self.conn.xread({"events": b"0-0"}, count=None, block=0)
+        events = [json.loads(e[1][b"data"]) for e in events[0][1]]
+        self.assertEqual(len(events), 16)
+        for i, event in enumerate(events):
+            self.assertEqual(event["source"], "https://github.com/example_user/tmp")
+            self.assertEqual(event["id"], expected[i][0])
+            self.assertEqual(event["type"], expected[i][1])
 
     def test_job_no_result(self):
         """Execute a job that will not produce any results"""
