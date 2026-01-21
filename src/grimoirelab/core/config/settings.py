@@ -419,3 +419,10 @@ SORTINGHAT_GENDERIZE_API_KEY = os.environ.get("SORTINGHAT_GENDERIZE_API_KEY", No
 MATCH_TRUSTED_SOURCES = os.environ.get(
     "SORTINGHAT_MATCH_TRUSTED_SOURCES", "github,gitlab,slack"
 ).split(",")
+
+
+#
+# TODO: Obtain the tokens from a secure vault
+# GitLab tokens
+#
+GRIMOIRELAB_GITLAB_TOKENS = os.environ.get("GRIMOIRELAB_GITLAB_TOKENS", "").split(",")
