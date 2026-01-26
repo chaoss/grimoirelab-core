@@ -24,7 +24,6 @@ import os
 import time
 import typing
 
-import certifi
 import click
 import django.core
 import django.core.wsgi
@@ -35,7 +34,8 @@ import structlog
 
 from django.conf import settings
 from django.db import connections, OperationalError
-from urllib3.util import create_urllib3_context
+
+from grimoirelab.core.utils.opensearch import get_opensearch_client
 
 if typing.TYPE_CHECKING:
     from click import Context
@@ -216,9 +216,7 @@ def _sleep_backoff(attempt: int) -> None:
     time.sleep(backoff)
 
 
-def _wait_opensearch_ready(
-    url: str, username: str | None, password: str | None, index: str, verify_certs: bool
-) -> None:
+def _wait_opensearch_ready(index: str) -> None:
     """Wait for OpenSearch to be available before starting"""
 
     # The 'opensearch' library writes logs with the exceptions while
@@ -228,25 +226,10 @@ def _wait_opensearch_ready(
     os_logger = logging.getLogger("opensearch")
     os_logger.disabled = True
 
-    context = None
-    if verify_certs:
-        # Use certificates from the local system and certifi
-        context = create_urllib3_context()
-        context.load_default_certs()
-        context.load_verify_locations(certifi.where())
-
-    auth = (username, password) if username and password else None
+    client = get_opensearch_client()
 
     for attempt in range(DEFAULT_MAX_RETRIES):
         try:
-            client = opensearchpy.OpenSearch(
-                hosts=[url],
-                http_auth=auth,
-                http_compress=True,
-                verify_certs=verify_certs,
-                ssl_context=context,
-                ssl_show_warn=False,
-            )
             client.search(index=index, size=0)
             break
         except opensearchpy.exceptions.NotFoundError:
@@ -341,11 +324,7 @@ def archivists(workers: int, verbose: bool, burst: bool):
     from grimoirelab.core.consumers.archivist import OpenSearchArchivistPool
 
     _wait_opensearch_ready(
-        settings.GRIMOIRELAB_ARCHIVIST["STORAGE_URL"],
-        settings.GRIMOIRELAB_ARCHIVIST["STORAGE_USERNAME"],
-        settings.GRIMOIRELAB_ARCHIVIST["STORAGE_PASSWORD"],
         settings.GRIMOIRELAB_ARCHIVIST["STORAGE_INDEX"],
-        settings.GRIMOIRELAB_ARCHIVIST["STORAGE_VERIFY_CERT"],
     )
     _wait_redis_ready()
 
