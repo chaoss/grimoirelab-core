@@ -77,6 +77,12 @@ def chronicler_job(
 
     backend_args = job_args.copy() if job_args else {}
 
+    # Convert common datetime arguments
+    datetime_args = ["from_date", "to_date"]
+    for arg in datetime_args:
+        if arg in backend_args and isinstance(backend_args[arg], str):
+            backend_args[arg] = str_to_datetime(backend_args[arg])
+
     # Get the generator to fetch the data items
     perceval_gen = perceval.backend.BackendItemsGenerator(
         backend_class, backend_args, datasource_category
@@ -222,7 +228,7 @@ class ChroniclerArgumentGenerator:
         params = {}
 
         if progress.summary and progress.summary.fetched > 0:
-            params["from_date"] = progress.summary.max_updated_on
+            params["from_date"] = progress.summary.max_updated_on.isoformat()
 
             if progress.summary.max_offset:
                 params["offset"] = progress.summary.max_offset
@@ -239,7 +245,7 @@ class ChroniclerArgumentGenerator:
         return ChroniclerArgumentGenerator.resuming_args(task_args, progress)
 
 
-def get_chronicler_argument_generator(name: str) -> ChroniclerArgumentGenerator:
+def get_chronicler_argument_generator(name: str) -> type[ChroniclerArgumentGenerator]:
     """Get the argument generator for a backend."""
 
     generators = {
@@ -320,9 +326,14 @@ class GitHubArgumentGenerator(ChroniclerArgumentGenerator):
 
         # For the first execution make some arguments mandatory
         job_args = {}
-        job_args["owner"] = task_args["owner"]
-        job_args["repository"] = task_args["repository"]
 
+        uri = task_args["uri"]
+        processed_uri = uri.rstrip("/").rstrip(".git", "")
+        path_parts = processed_uri.split("/")
+        job_args["owner"] = path_parts[-2]
+        job_args["repository"] = path_parts[-1]
+
+        # TODO: Obtain tokens from a secure storage
         tokens = task_args.get("api_token", [])
 
         if not isinstance(tokens, list):
@@ -330,6 +341,8 @@ class GitHubArgumentGenerator(ChroniclerArgumentGenerator):
 
         job_args["api_token"] = tokens
         job_args["sleep_for_rate"] = True
+
+        return job_args
 
     @staticmethod
     def resuming_args(
@@ -340,7 +353,7 @@ class GitHubArgumentGenerator(ChroniclerArgumentGenerator):
 
         job_args = task_args.copy() if task_args else {}
         job_args["sleep_for_rate"] = True
-        job_args["from_date"] = progress.summary.last_updated_on
+        job_args["from_date"] = progress.summary.last_updated_on.isoformat()
 
         return job_args
 
@@ -354,7 +367,7 @@ class GitHubArgumentGenerator(ChroniclerArgumentGenerator):
         job_args = task_args.copy() if task_args else {}
 
         if progress.summary and progress.summary.last_updated_on:
-            job_args["from_date"] = progress.summary.last_updated_on
+            job_args["from_date"] = progress.summary.last_updated_on.isoformat()
 
         return job_args
 
