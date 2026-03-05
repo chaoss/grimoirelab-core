@@ -66,7 +66,7 @@ class TestChroniclerJob(GrimoireLabTestCase):
         result = job.return_value()
 
         # Check job result
-        self.assertEqual(result.job_id, job.get_id())
+        self.assertEqual(result.job_id, job.id)
         self.assertEqual(result.backend, "git")
         self.assertEqual(result.category, "commit")
         self.assertEqual(result.summary.last_uuid, "1375b60d3c23ac9b81da92523e4144abc4489d4c")
@@ -227,7 +227,7 @@ class TestChroniclerJob(GrimoireLabTestCase):
         result = job.return_value()
 
         # Check job result
-        self.assertEqual(result.job_id, job.get_id())
+        self.assertEqual(result.job_id, job.id)
         self.assertEqual(result.backend, "git")
         self.assertEqual(result.category, "commit")
         self.assertEqual(result.summary.last_uuid, None)
