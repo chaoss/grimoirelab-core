@@ -9,7 +9,7 @@ from grimoirelab.core.config.settings import (
     LOGGING,
 )
 
-import django_rq.queues
+import django_rq.connection_utils
 
 from fakeredis import FakeRedis, FakeStrictRedis
 
@@ -86,7 +86,7 @@ RQ_QUEUES["default"] = _RQ_DATABASE  # noqa: F405
 RQ_QUEUES["testing"] = _RQ_DATABASE  # noqa: F405
 RQ["WORKER_CLASS"] = "grimoirelab.core.scheduler.worker.GrimoireLabSimpleWorker"
 
-django_rq.queues.get_redis_connection = FakeRedisConn()
+django_rq.connection_utils.get_redis_connection = FakeRedisConn()
 
 # Ignore warnings raised by the tests
 
