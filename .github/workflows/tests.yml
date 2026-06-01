@@ -92,3 +92,9 @@ jobs:
       - name: Run unit tests
         working-directory: ./ui
         run: yarn test:unit
+      - name: Run end-to-end tests
+        uses: cypress-io/github-action@1b70233146622b69e789ccdd4f9452adc638d25a # 6.6.1
+        with:
+          build: yarn build
+          command: yarn test:e2e
+          working-directory: ./ui
