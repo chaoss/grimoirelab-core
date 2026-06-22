@@ -81,7 +81,7 @@ def chronicler_job(
     perceval_gen = perceval.backend.BackendItemsGenerator(
         backend_class, backend_args, datasource_category
     )
-    progress = ChroniclerProgress(rq_job.get_id(), datasource_type, datasource_category, None)
+    progress = ChroniclerProgress(rq_job.id, datasource_type, datasource_category, None)
     rq_job.progress = progress
 
     # The chronicler generator will eventize the data items

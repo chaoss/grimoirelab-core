@@ -36,8 +36,8 @@ if typing.TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-class GrimoireLabWorker(rq.worker.Worker):
-    """Worker to run GrimoireLab jobs.
+class GrimoireLabWorkerMixin:
+    """Shared functionality for GrimoireLab workers.
 
     This class includes some extra functionality to run GrimoireLab
     jobs, like for example, update Job status on models.
@@ -60,7 +60,13 @@ class GrimoireLabWorker(rq.worker.Worker):
             job_db.task.save()
 
 
-class GrimoireLabSimpleWorker(GrimoireLabWorker, rq.worker.SimpleWorker):
+class GrimoireLabWorker(GrimoireLabWorkerMixin, rq.worker.Worker):
+    """Worker to run GrimoireLab jobs with process forking."""
+
+    pass
+
+
+class GrimoireLabSimpleWorker(GrimoireLabWorkerMixin, rq.worker.SimpleWorker):
     """Worker to run GrimoireLab jobs in the same process, specially for testing"""
 
     pass

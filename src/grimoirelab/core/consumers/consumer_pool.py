@@ -149,6 +149,9 @@ class ConsumerPool:
         connection_class, connection_pool_class, connection_pool_kwargs = parse_connection(
             self.connection
         )
+        # Redis 8.0 set a default socket_timeout of 5 seconds which is not enough when
+        # the consumer is blocked waiting for new entries in the stream.
+        connection_pool_kwargs["socket_timeout"] = (self.stream_block_timeout / 1000) + 10
         kwargs = {
             "connection_class": connection_class,
             "connection_pool_class": connection_pool_class,
