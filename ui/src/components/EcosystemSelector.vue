@@ -58,7 +58,7 @@ export default {
   },
   computed: {
     selectedEcosystem() {
-      if (this.ecosystems.length > 0 && this.$route.query.ecosystem) {
+      if (this.ecosystems?.length > 0 && this.$route.query.ecosystem) {
         const ecosystem = this.ecosystems.find((e) => e.name == this.$route.query.ecosystem)
         return ecosystem
       } else {

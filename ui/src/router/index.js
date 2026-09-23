@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/store'
+import sortinghat from 'sortinghat-ui-core'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -84,6 +85,18 @@ const router = createRouter({
       path: '/signin',
       name: 'signIn',
       component: () => import('../views/SignIn.vue')
+    },
+    {
+      path: '/identities',
+      name: 'identities',
+      children: sortinghat.routes,
+      redirect: { name: 'Dashboard' },
+      meta: {
+        breadcrumb: {
+          title: 'Identities',
+          to: { name: 'Dashboard' }
+        }
+      }
     },
     { path: '/:pathMatch(.*)*', name: 'notFound', component: () => import('../views/NotFound.vue') }
   ]

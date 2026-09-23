@@ -1,10 +1,17 @@
+/* eslint-env es2021 */
+
 import IntervalSelector from '@/components/IntervalSelector.vue'
-import vuetify from '@/plugins/vuetify'
 import { describe, expect, test } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 describe('components/IntervalSelector', () => {
   test('Emits custom value', async () => {
+    globalThis.CSS = {
+      supports: () => true
+    }
+
+    const { default: vuetify } = await import('@/plugins/vuetify')
+
     const wrapper = mount(IntervalSelector, {
       global: {
         plugins: [vuetify]

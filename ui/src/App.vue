@@ -61,6 +61,12 @@ provide('createEcosystem', API.ecosystem.create)
           </template>
           <v-list-item-title>Tasks</v-list-item-title>
         </v-list-item>
+        <v-list-item :to="{ name: 'identities' }">
+          <template #prepend>
+            <v-icon>mdi-account-multiple</v-icon>
+          </template>
+          <v-list-item-title>Identities</v-list-item-title>
+        </v-list-item>
       </v-list>
     </v-navigation-drawer>
     <v-main>
