@@ -31,6 +31,11 @@ ecosystems_urlpatterns = [
         name="projects-detail",
     ),
     path(
+        "<str:ecosystem_name>/projects/<str:project_name>/events/",
+        api.ProjectEventList.as_view(),
+        name="project-events",
+    ),
+    path(
         "<str:ecosystem_name>/projects/<str:project_name>/children/",
         api.ProjectChildrenList.as_view(),
         name="children-list",
@@ -44,6 +49,11 @@ ecosystems_urlpatterns = [
         "<str:ecosystem_name>/projects/<str:project_name>/repos/<str:uuid>/",
         api.RepoDetail.as_view(),
         name="repo-detail",
+    ),
+    path(
+        "<str:ecosystem_name>/projects/<str:project_name>/repos/<str:uuid>/events/",
+        api.RepoEventList.as_view(),
+        name="repo-events",
     ),
     path(
         "<str:ecosystem_name>/projects/<str:project_name>/repos/<str:uuid>/categories/<str:category>/",

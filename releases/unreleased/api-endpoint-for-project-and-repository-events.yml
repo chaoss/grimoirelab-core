@@ -1,0 +1,9 @@
+---
+title: API endpoint for project and repository events
+category: added
+author: Jose Javier Merchante <jjmerchante@bitergia.com>
+issue: null
+notes: >
+  Introduce two new API endpoints to fetch the latest events
+  for a specific project and repository. These endpoints allow
+  filtering by event type and date, and support pagination.
