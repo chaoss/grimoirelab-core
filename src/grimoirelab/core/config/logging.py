@@ -152,6 +152,10 @@ def configure_grimoirelab_logging(
             "handlers": ["json"] if json_mode else ["default"],
             "level": "DEBUG" if debug else "INFO",
         },
+        # Granian defines its loggers with 'propagate' disabled, so they
+        # ignore the handlers above. Let them propagate to the root logger.
+        "_granian": {"propagate": True},
+        "granian.access": {"level": "INFO", "propagate": True},
     }
 
     return logging_settings

@@ -29,6 +29,7 @@ import click
 import django.core
 import django.core.wsgi
 import django_rq
+import granian
 import opensearchpy
 import redis
 import structlog
@@ -57,11 +58,11 @@ def run(ctx: Context):
 
 
 @click.option(
-    "--dev",
-    "devel",
+    "--web",
+    "web",
     is_flag=True,
     default=False,
-    help="Run the service in developer mode.",
+    help="Run the service with the web user interface.",
 )
 @click.option(
     "--maintenance-interval",
@@ -71,16 +72,20 @@ def run(ctx: Context):
 )
 @run.command()
 @click.pass_context
-def server(ctx: Context, devel: bool, maintenance_interval: int):
+def server(ctx: Context, web: bool, maintenance_interval: int):
     """Start the GrimoireLab core server.
 
     GrimoireLab server allows to schedule tasks and fetch data from
     software repositories. The server provides an API to perform all
     the operations.
 
-    By default, the server runs a WSGI app because in production it
-    should be run with a reverse proxy. If you activate the '--dev' flag,
-    a HTTP server will be run instead.
+    By default, the server opens a HTTP connection for accepting
+    API calls only. To serve the web user interface use the '--web' flag.
+    In production, it's recommended to put the service
+    behind a reverse proxy to access it, and use the proxy to serve the
+    web interface and the static content too.
+    Use the environment variables 'GRIMOIRELAB_HTTP_HOST' and
+    'GRIMOIRELAB_HTTP_PORT' to configure the server endpoint.
 
     The server also runs maintenance tasks in the background every
     defined interval (default is 60 seconds). These tasks include
@@ -91,33 +96,45 @@ def server(ctx: Context, devel: bool, maintenance_interval: int):
 
     env = os.environ
 
-    env["UWSGI_ENV"] = f"DJANGO_SETTINGS_MODULE={ctx.obj['cfg']}"
-
-    if devel:
-        env["GRIMOIRELAB_DEBUG"] = "true"
-        env["UWSGI_HTTP"] = env.get("GRIMOIRELAB_HTTP_DEV", "127.0.0.1:8000")
-        env["UWSGI_STATIC_MAP"] = settings.STATIC_URL + "=" + settings.STATIC_ROOT
-    else:
-        env["UWSGI_HTTP"] = ""
-
-    env["UWSGI_MODULE"] = "grimoirelab.core.app.wsgi:application"
-    env["UWSGI_SOCKET"] = "0.0.0.0:9314"
+    http_host = env.get("GRIMOIRELAB_HTTP_HOST", "127.0.0.1")
+    http_port = env.get("GRIMOIRELAB_HTTP_PORT", 8000)
 
     # Run in multiple threads by default
-    env["UWSGI_WORKERS"] = env.get("GRIMOIRELAB_UWSGI_WORKERS", "1")
-    env["UWSGI_THREADS"] = env.get("GRIMOIRELAB_UWSGI_THREADS", "4")
+    http_workers = env.get("GRIMOIRELAB_HTTP_WORKERS", 4)
+    http_threads = env.get("GRIMOIRELAB_HTTP_THREADS", 1)
 
-    # These options shouldn't be modified
-    env["UWSGI_MASTER"] = "true"
-    env["UWSGI_ENABLE_THREADS"] = "true"
-    env["UWSGI_LAZY_APPS"] = "true"
-    env["UWSGI_SINGLE_INTERPRETER"] = "true"
+    server_config = {
+        "target": "grimoirelab.core.app.wsgi:application",
+        "interface": granian.constants.Interfaces.WSGI,
+        "address": http_host,
+        "port": http_port,
+        "workers": http_workers,
+        "blocking_threads": http_threads,
+        "log_dictconfig": settings.LOGGING,
+    }
+
+    if web:
+        import pathlib
+
+        settings.RUN_WEB_SERVER = True
+        static_url = [settings.STATIC_URL]
+        static_path = [pathlib.Path(settings.STATIC_ROOT)]
+
+        server_config["static_path_route"] = static_url
+        server_config["static_path_mount"] = static_path
+    else:
+        settings.RUN_WEB_SERVER = False
+
+    # Config server and define hooks
+    server = granian.Granian(**server_config)
+    server.on_startup(lambda: logger.info("GrimoireLab server starting ..."))
+    server.on_shutdown(lambda: logger.info("GrimoireLab server stopping..."))
 
     # Run maintenance tasks in the background
     _maintenance_process(maintenance_interval)
 
     # Run the server
-    os.execvp("uwsgi", ("uwsgi",))
+    server.serve()
 
 
 def periodic_maintain_tasks(interval):
