@@ -15,7 +15,7 @@ ENV TERM=xterm-256color
 RUN groupadd -r grimoirelab && useradd -r -m -g grimoirelab grimoirelab
 
 # Change apt sources to avoid connection problems
-RUN sed -i "s/http:\/\/deb.debian.org/http:\/\/ftp.fr.debian.org/g" /etc/apt/sources.list
+RUN sed -i "s/http:\/\/deb.debian.org/http:\/\/ftp.fr.debian.org/g" /etc/apt/sources.list.d/debian.sources
 
 # Install base packages
 RUN apt-get update && \
@@ -28,6 +28,7 @@ RUN apt-get update && \
         dirmngr gnupg \
         curl \
         gcc \
+        pkg-config \
         git git-core \
         python3 python3-dev \
         python3-pip python3-venv \
