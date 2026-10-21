@@ -10,7 +10,7 @@ our [website](https://chaoss.github.io/grimoirelab/).
 
 ## How to use this image
 
-### Quickstart 
+### Quickstart
 
 This image allows you to run GrimoireLab Core Scheduler and basic commands.
 Make sure MySQL and Valkey (a Redis-compatible key-value store) containers are
@@ -53,7 +53,7 @@ docker run --rm -d --net grimoire-net --name grimoirelab-workerpool \
 docker run --rm -d --net grimoire-net --name grimoirelab-server \
     --env-file docker/grimoirelab.env -p 8000:8000 \
     grimoirelab/grimoirelab-core \
-    grimoirelab run server --dev
+    grimoirelab run server --web
 ```
 
 #### Create a Git fetch task

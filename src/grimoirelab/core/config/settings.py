@@ -36,7 +36,8 @@ SILENCED_SYSTEM_CHECKS = ["django_mysql.E016"]
 DEBUG = os.environ.get("GRIMOIRELAB_DEBUG", "False").lower() in ("true", "1")
 
 #
-# ALLOWED_HOST protects the site against CSRF attacks.
+# ALLOWED_HOSTS protects the site against HTTP Host header attacks.
+# It is checked against the Host header of incoming requests.
 # If DEBUG is set to False, you will need to configure this parameter,
 # with the host you are using to serve GrimoireLab.
 #
@@ -68,9 +69,26 @@ elif "GRIMOIRELAB_CORS_ALLOWED_ORIGIN_REGEXES" in os.environ:
 else:
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+#
+# Origins trusted for unsafe (POST, PUT, ...) cross-origin requests.
+# CORS only controls browser access; Django's CSRF middleware checks
+# the Origin header against this list separately.
+#
+# https://docs.djangoproject.com/en/4.2/ref/settings/#csrf-trusted-origins
+#
+
+if "GRIMOIRELAB_CSRF_TRUSTED_ORIGINS" in os.environ:
+    CSRF_TRUSTED_ORIGINS = os.environ["GRIMOIRELAB_CSRF_TRUSTED_ORIGINS"].split(",")
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:5173",
+    ]
 
 
 #
@@ -211,7 +229,10 @@ TIME_ZONE = "UTC"
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 #
 
-STATIC_URL = "/static/"
+
+RUN_WEB_SERVER = os.environ.get("GRIMOIRELAB_WEB_SERVER", "False").lower() in ("true", "1")
+
+STATIC_URL = "/static"
 STATICFILES_DIRS = [BASE_DIR / "templates/static"]
 
 # UI static files will be copied to the next path when

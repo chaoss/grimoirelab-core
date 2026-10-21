@@ -39,8 +39,12 @@ urlpatterns = [
             ]
         ),
     ),
-    re_path(
-        r"^(?!static|login|token|api).*$",
-        TemplateView.as_view(template_name="index.html"),
-    ),
 ]
+
+if settings.RUN_WEB_SERVER:
+    urlpatterns.append(
+        re_path(
+            r"^(?!static|login|token|api).*$",
+            TemplateView.as_view(template_name="index.html"),
+        ),
+    )
