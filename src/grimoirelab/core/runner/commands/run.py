@@ -117,7 +117,9 @@ def server(ctx: Context, web: bool, maintenance_interval: int):
         import pathlib
 
         settings.RUN_WEB_SERVER = True
-        static_url = [settings.STATIC_URL]
+        # Django requires STATIC_URL to end with '/', but Granian
+        # needs the route prefix without the trailing slash.
+        static_url = [settings.STATIC_URL.rstrip("/")]
         static_path = [pathlib.Path(settings.STATIC_ROOT)]
 
         server_config["static_path_route"] = static_url
