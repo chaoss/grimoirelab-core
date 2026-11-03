@@ -232,7 +232,7 @@ TIME_ZONE = "UTC"
 
 RUN_WEB_SERVER = os.environ.get("GRIMOIRELAB_WEB_SERVER", "False").lower() in ("true", "1")
 
-STATIC_URL = "/static"
+STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "templates/static"]
 
 # UI static files will be copied to the next path when
