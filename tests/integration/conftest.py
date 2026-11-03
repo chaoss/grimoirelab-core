@@ -28,9 +28,9 @@ import pytest
 from opensearchpy import OpenSearch
 from redis import Redis
 from testcontainers.core.waiting_utils import wait_for_logs
-from testcontainers.mysql import MySqlContainer
-from testcontainers.opensearch import OpenSearchContainer
-from testcontainers.redis import RedisContainer
+from testcontainers.community.mysql import MySqlContainer
+from testcontainers.community.opensearch import OpenSearchContainer
+from testcontainers.community.redis import RedisContainer
 from grimoirelab.core.consumers.archivist import OpenSearchArchivist, MAPPING
 
 
