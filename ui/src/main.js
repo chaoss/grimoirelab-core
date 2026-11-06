@@ -15,7 +15,7 @@ const app = createApp(App)
 app.use(router).use(vuetify).use(pinia)
 
 app.use(sortinghat, {
-  apiURL: `${base}/api/v1/identities/`,
+  apiURL: `${base.replace(/\/+$/, '')}/api/v1/identities/`,
   router: router
 })
 

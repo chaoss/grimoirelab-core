@@ -1,0 +1,10 @@
+---
+title: Identities tab API URL in production builds
+category: fixed
+author: Santiago Dueñas <santidd81@gmail.com>
+issue: null
+notes: >
+  The identities tab failed in packaged releases because the
+  SortingHat API URL was built as `//api/v1/identities/`, which
+  browsers resolve to `http://api/v1/identities/`. The trailing
+  slash of the base URL is now removed before building it.
