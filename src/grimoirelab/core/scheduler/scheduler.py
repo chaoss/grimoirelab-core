@@ -25,11 +25,11 @@ import uuid
 import django.db
 import django_rq
 import rq.exceptions
+import rq.executions
 import rq.job
 import structlog
 
 from django.conf import settings
-from rq.registry import StartedJobRegistry
 from rq.command import send_stop_job_command
 
 from grimoirelab_toolkit.datetime import datetime_utcnow
@@ -207,7 +207,7 @@ def maintain_tasks() -> None:
         )
 
         current_time = datetime_utcnow()
-        scheduled_at = max(task.scheduled_at, current_time)
+        scheduled_at = max(task.scheduled_at or current_time, current_time)
 
         job_db.save_run(SchedulerStatus.CANCELED)
         _enqueue_task(task, scheduled_at=scheduled_at)
@@ -221,6 +221,10 @@ def _is_job_removed_or_stopped(job: Job, queue: str) -> bool:
 
     :param job: job to check.
     :param queue: queue where the job is enqueued.
+
+    :return: True when the job doesn't exist in RQ, has a stopped
+        status, or is started but has no alive execution; False
+        otherwise.
     """
     try:
         connection = django_rq.get_connection(queue)
@@ -228,17 +232,39 @@ def _is_job_removed_or_stopped(job: Job, queue: str) -> bool:
         status = job_rq.get_status()
         if status == rq.job.JobStatus.STARTED:
             # Sometimes, the worker may be forcibly stopped, leaving the job
-            # in the STARTED status. We need to check if the job has expired
-            # due to a missing heartbeat.
-            try:
-                expiration_date = StartedJobRegistry(queue, connection).get_expiration_time(job_rq)
-            except TypeError:
-                return True
-            return expiration_date < datetime.datetime.now()
+            # in the STARTED status. The job is stopped when none of its
+            # executions is still alive.
+            return not _job_has_alive_execution(job_rq)
         else:
             return status in RQ_JOB_STOPPED_STATUS
     except rq.exceptions.NoSuchJobError:
         return True
+
+
+def _job_has_alive_execution(job_rq: rq.job.Job) -> bool:
+    """Check if any execution of the job is still alive.
+
+    Workers store each execution of a job in Redis with an expiration
+    time that is extended on every heartbeat. When a worker stops
+    sending heartbeats, its execution expires and can't be fetched
+    anymore.
+
+    This depends on how RQ 2.x manages the executions of the jobs,
+    so it should be reviewed when RQ is upgraded.
+
+    :param job_rq: RQ job to check.
+
+    :return: True if at least one execution is alive; False otherwise.
+    """
+    for execution_id in job_rq.execution_registry.get_execution_ids():
+        try:
+            rq.executions.Execution.fetch(execution_id, job_rq.id, job_rq.connection)
+        except ValueError:
+            # The execution expired
+            continue
+        return True
+
+    return False
 
 
 def _enqueue_task(task: Task, scheduled_at: datetime.datetime | None = None) -> Job:
