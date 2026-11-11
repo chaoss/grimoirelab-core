@@ -1,0 +1,12 @@
+---
+title: Jobs lost when scheduled to run immediately
+category: fixed
+author: Santiago Dueñas <sduenas@grimoirelab.org>
+issue: null
+notes: >
+  Jobs scheduled to run immediately could be lost and never
+  executed. RQ versions older than 3.0 add the job id to the
+  scheduled registry before the job is stored in Redis. If the
+  RQ scheduler reads the registry in between, it removes the id
+  without enqueuing the job. Jobs that must run immediately are
+  now added to the queue directly instead of being scheduled.
