@@ -694,6 +694,66 @@ class TestCancelTask(GrimoireLabTestCase):
         task1.refresh_from_db()
         self.assertEqual(task1.status, SchedulerStatus.CANCELED)
 
+    @unittest.mock.patch("grimoirelab.core.scheduler.scheduler.send_stop_job_command")
+    def test_cancel_task_running_job(self, mock_stop_job):
+        """Running jobs are canceled before they are stopped"""
+
+        task = schedule_task("callback_test_task", {"a": 1, "b": 2})
+        job_db = task.jobs.first()
+
+        # Start the job as a worker does
+        connection = django_rq.get_connection()
+
+        job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
+        job_rq.set_status(rq.job.JobStatus.STARTED)
+
+        # When the job is stopped, it must be already canceled,
+        # so its callbacks don't re-schedule the task
+        def check_job_canceled(connection, job_id):
+            self.assertEqual(find_job(job_id).status, SchedulerStatus.CANCELED)
+
+        mock_stop_job.side_effect = check_job_canceled
+
+        # Cancel task
+        cancel_task(task.uuid)
+
+        # The job was stopped, removed and canceled
+        mock_stop_job.assert_called_once_with(connection, job_db.uuid)
+
+        with self.assertRaises(rq.exceptions.NoSuchJobError):
+            rq.job.Job.fetch(job_db.uuid, connection=connection)
+
+        job_db.refresh_from_db()
+        self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, SchedulerStatus.CANCELED)
+
+    def test_cancel_task_started_job_no_worker(self):
+        """Started jobs without a worker are canceled"""
+
+        task = schedule_task("callback_test_task", {"a": 1, "b": 2})
+        job_db = task.jobs.first()
+
+        # Set the job as started but without a worker
+        connection = django_rq.get_connection()
+
+        job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
+        job_rq.set_status(rq.job.JobStatus.STARTED)
+
+        # Cancel task
+        cancel_task(task.uuid)
+
+        # The job was removed and canceled
+        with self.assertRaises(rq.exceptions.NoSuchJobError):
+            rq.job.Job.fetch(job_db.uuid, connection=connection)
+
+        job_db.refresh_from_db()
+        self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, SchedulerStatus.CANCELED)
+
     def test_no_task_found(self):
         """An exception is raised when the task doesn't exist"""
 
