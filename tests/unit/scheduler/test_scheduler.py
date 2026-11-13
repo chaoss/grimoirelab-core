@@ -763,6 +763,52 @@ class TestRescheduleTask(GrimoireLabTestCase):
         self.assertEqual(task.status, SchedulerStatus.ENQUEUED)
         self.assertLess(task.scheduled_at, second_schedule_time)
 
+    @unittest.mock.patch("grimoirelab.core.scheduler.scheduler.send_stop_job_command")
+    def test_reschedule_task_running(self, mock_stop_job):
+        """A running task is canceled and re-scheduled"""
+
+        task_args = {
+            "a": 1,
+            "b": 2,
+        }
+
+        task = schedule_task("test_task", task_args)
+        job_db = task.jobs.first()
+
+        # Start the job as a worker does
+        connection = django_rq.get_connection()
+
+        job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
+        with connection.pipeline() as pipeline:
+            rq.executions.Execution.create(job_rq, ttl=600, pipeline=pipeline)
+            job_rq.set_status(rq.job.JobStatus.STARTED, pipeline=pipeline)
+            pipeline.execute()
+
+        job_db.status = SchedulerStatus.RUNNING
+        job_db.save()
+        task.status = SchedulerStatus.RUNNING
+        task.save()
+
+        # Reschedule the task
+        reschedule_task(task.uuid)
+
+        # The running job was stopped, removed and canceled
+        mock_stop_job.assert_called_once_with(connection, job_db.uuid)
+
+        with self.assertRaises(rq.exceptions.NoSuchJobError):
+            rq.job.Job.fetch(job_db.uuid, connection=connection)
+
+        job_db.refresh_from_db()
+        self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
+
+        # A new job was created
+        task.refresh_from_db()
+        self.assertEqual(task.status, SchedulerStatus.ENQUEUED)
+        self.assertEqual(task.jobs.count(), 2)
+
+        new_job_db = task.jobs.exclude(uuid=job_db.uuid).get()
+        self.assertEqual(new_job_db.status, SchedulerStatus.ENQUEUED)
+
     def test_reschedule_inconsistent_task(self):
         """Test if reschedules a task with an inconsistent state"""
 
