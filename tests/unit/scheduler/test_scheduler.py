@@ -556,6 +556,48 @@ class TestMaintainTasks(GrimoireLabTestCase):
         self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
         self.assertEqual(task.jobs.count(), 2)
 
+    def test_maintain_tasks_abandoned_job_registry_cleanup(self):
+        """Abandoned jobs are not re-scheduled again when RQ cleans them up"""
+
+        task_args = {
+            "a": 1,
+            "b": 2,
+        }
+
+        task = schedule_task("callback_test_task", task_args)
+        job_db = task.jobs.first()
+
+        # Start the job with an execution that is already expired
+        connection = django_rq.get_connection()
+
+        job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
+        job_rq.meta["progress"] = None
+        job_rq.save_meta()
+        with connection.pipeline() as pipeline:
+            rq.executions.Execution.create(job_rq, ttl=0, pipeline=pipeline)
+            job_rq.set_status(rq.job.JobStatus.STARTED, pipeline=pipeline)
+            pipeline.execute()
+
+        # Run the maintenance tasks
+        maintain_tasks()
+
+        # The job was canceled and a new one was created
+        job_db.refresh_from_db()
+        self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
+        self.assertEqual(task.jobs.count(), 2)
+
+        # RQ cleans up the abandoned job running its failure callback
+        job_rq.started_job_registry.cleanup()
+
+        # The job is still canceled and no new jobs were created
+        job_db.refresh_from_db()
+        self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, SchedulerStatus.ENQUEUED)
+        self.assertEqual(task.failures, 0)
+        self.assertEqual(task.jobs.count(), 2)
+
     def test_maintain_tasks_running_job_multiple_executions(self):
         """Jobs with at least one alive execution are not re-scheduled"""
 
@@ -937,6 +979,28 @@ class TestOnSuccessCallback(GrimoireLabTestCase):
         self.assertEqual(task.status, SchedulerStatus.COMPLETED)
 
         # No new job was created
+        self.assertEqual(self.job_class.objects.count(), 1)
+
+    def test_canceled_job(self):
+        """Task is not re-scheduled when the job was canceled"""
+
+        task_args = {
+            "a": 1,
+            "b": 2,
+        }
+        task = OnSuccessCallbackTestTask.create_task(task_args, 360, 10)
+        job_db = _enqueue_task(task, scheduled_at=None)
+
+        # Cancel the job before it finishes
+        job_db.save_run(SchedulerStatus.CANCELED)
+
+        # Run the callback as the job finished
+        job_rq = rq.job.Job.fetch(job_db.uuid, connection=django_rq.get_connection())
+        _on_success_callback(job_rq, job_rq.connection, 3)
+
+        # The job is still canceled and no new jobs were created
+        job_db.refresh_from_db()
+        self.assertEqual(job_db.status, SchedulerStatus.CANCELED)
         self.assertEqual(self.job_class.objects.count(), 1)
 
     @unittest.mock.patch("grimoirelab.core.scheduler.scheduler.datetime_utcnow")

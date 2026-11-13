@@ -59,6 +59,13 @@ RQ_JOB_STOPPED_STATUS = [
     rq.job.JobStatus.CANCELED,
 ]
 
+SCHEDULER_ACTIVE_STATUS = [
+    SchedulerStatus.RUNNING,
+    SchedulerStatus.RECOVERY,
+    SchedulerStatus.ENQUEUED,
+    SchedulerStatus.NEW,
+]
+
 
 logger = structlog.get_logger(__name__)
 
@@ -177,16 +184,12 @@ def maintain_tasks() -> None:
     This function will check the status of the tasks and jobs
     that are scheduled, rescheduling them if necessary.
     """
-    active_status = [
-        SchedulerStatus.RUNNING,
-        SchedulerStatus.RECOVERY,
-        SchedulerStatus.ENQUEUED,
-        SchedulerStatus.NEW,
-    ]
-    tasks = find_tasks_by_status(active_status)
+    tasks = find_tasks_by_status(SCHEDULER_ACTIVE_STATUS)
 
     for task in tasks:
-        job_db = task.jobs.filter(status__in=active_status).order_by("-scheduled_at").first()
+        job_db = (
+            task.jobs.filter(status__in=SCHEDULER_ACTIVE_STATUS).order_by("-scheduled_at").first()
+        )
 
         if not job_db:
             logger.error(
@@ -393,6 +396,12 @@ def _on_success_callback(
         logger.error("job not found", job_uuid=job.uuid)
         return
 
+    # The job was canceled while it was running, so the task
+    # was already re-scheduled.
+    if job_db.status not in SCHEDULER_ACTIVE_STATUS:
+        logger.warning("job no longer active; result ignored", job_uuid=job_db.uuid)
+        return
+
     job_db.save_run(
         SchedulerStatus.COMPLETED,
         progress=result,
@@ -433,6 +442,13 @@ def _on_failure_callback(
         job_db = find_job(job.id)
     except NotFoundError:
         logger.error("job not found", job_uuid=job.uuid)
+        return
+
+    # The job was canceled while it was running, so the task
+    # was already re-scheduled. This happens, for example, when
+    # RQ cleans up a job that the maintenance process canceled.
+    if job_db.status not in SCHEDULER_ACTIVE_STATUS:
+        logger.warning("job no longer active; failure ignored", job_uuid=job_db.uuid)
         return
 
     job_db.save_run(
