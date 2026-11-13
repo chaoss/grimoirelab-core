@@ -160,11 +160,11 @@ def reschedule_task(task_uuid: str) -> None:
             pass
         _schedule_job(task, job, datetime_utcnow(), job.job_args)
     elif task.status == SchedulerStatus.RUNNING:
-        # Make sure it is running
+        # Cancel the running job and force the execution
         job = task.jobs.order_by("-scheduled_at").first()
-        if _is_job_removed_or_stopped(job, task.default_job_queue):
-            job.save_run(SchedulerStatus.CANCELED)
-            _enqueue_task(task)
+        job.save_run(SchedulerStatus.CANCELED)
+        _stop_job(job, task.default_job_queue)
+        _enqueue_task(task)
     else:
         _enqueue_task(task)
 
@@ -265,6 +265,28 @@ def _job_has_alive_execution(job_rq: rq.job.Job) -> bool:
         return True
 
     return False
+
+
+def _stop_job(job: Job, queue: str) -> None:
+    """Stop the job, if it is running, and remove it from RQ.
+
+    :param job: job to stop.
+    :param queue: queue where the job is enqueued.
+    """
+    connection = django_rq.get_connection(queue)
+    try:
+        job_rq = rq.job.Job.fetch(job.uuid, connection=connection)
+    except rq.exceptions.NoSuchJobError:
+        return
+
+    if job_rq.get_status() == rq.job.JobStatus.STARTED:
+        try:
+            send_stop_job_command(connection, job_rq.id)
+        except rq.exceptions.InvalidJobOperation:
+            # No worker is executing the job
+            pass
+
+    job_rq.delete()
 
 
 def _enqueue_task(task: Task, scheduled_at: datetime.datetime | None = None) -> Job:
