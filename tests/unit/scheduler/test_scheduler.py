@@ -545,7 +545,6 @@ class TestMaintainTasks(GrimoireLabTestCase):
 
         # Start the job as a worker does
         connection = django_rq.get_connection()
-        self.addCleanup(connection.flushdb)
 
         job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
         with connection.pipeline() as pipeline:
@@ -574,7 +573,6 @@ class TestMaintainTasks(GrimoireLabTestCase):
 
         # Set the job as started but without executions
         connection = django_rq.get_connection()
-        self.addCleanup(connection.flushdb)
 
         job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
         job_rq.set_status(rq.job.JobStatus.STARTED)
@@ -600,7 +598,6 @@ class TestMaintainTasks(GrimoireLabTestCase):
 
         # Start the job with an execution that is already expired
         connection = django_rq.get_connection()
-        self.addCleanup(connection.flushdb)
 
         job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
         with connection.pipeline() as pipeline:
@@ -629,7 +626,6 @@ class TestMaintainTasks(GrimoireLabTestCase):
 
         # Start the job with an expired execution and an alive one
         connection = django_rq.get_connection()
-        self.addCleanup(connection.flushdb)
 
         job_rq = rq.job.Job.fetch(job_db.uuid, connection=connection)
         with connection.pipeline() as pipeline:
