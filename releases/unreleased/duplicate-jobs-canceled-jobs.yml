@@ -1,0 +1,13 @@
+---
+title: Duplicate jobs after canceling running jobs
+category: fixed
+author: Santiago Dueñas <sduenas@grimoirelab.org>
+issue: null
+notes: >
+  Jobs canceled while they were running could still schedule
+  a new job for their task when they finished, creating a
+  duplicate. For example, RQ runs the failure callback of
+  abandoned jobs when it cleans them up, even if the
+  maintenance process already canceled them and scheduled
+  a new job. Callbacks of jobs that are no longer active
+  are now ignored.
