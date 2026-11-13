@@ -122,18 +122,13 @@ def cancel_task(task_uuid: str) -> None:
 
     jobs = task.jobs.all()
     for job in jobs:
-        connection = django_rq.get_connection(task.default_job_queue)
-        try:
-            job_rq = rq.job.Job.fetch(job.uuid, connection=connection)
-        except rq.exceptions.NoSuchJobError:
-            continue
-        if job_rq.get_status() == rq.job.JobStatus.STARTED:
-            send_stop_job_command(connection, job_rq.id)
-        job_rq.delete()
-
+        # Cancel the job first, so it is already canceled
+        # when its callbacks run.
         if job.status not in (SchedulerStatus.FAILED, SchedulerStatus.COMPLETED):
             job.status = SchedulerStatus.CANCELED
             job.save()
+
+        _stop_job(job, task.default_job_queue)
 
     if task.status not in (SchedulerStatus.COMPLETED, SchedulerStatus.FAILED):
         task.status = SchedulerStatus.CANCELED

@@ -1,0 +1,12 @@
+---
+title: Canceling running tasks
+category: fixed
+author: Santiago Dueñas <sduenas@grimoirelab.org>
+issue: null
+notes: >
+  Canceling a task with a job set as started but not
+  executed by any worker raised an error, leaving some of
+  its jobs canceled and others not. Also, jobs were canceled
+  after they were stopped, so a job that finished in between
+  could schedule a new job for the canceled task. Jobs are
+  now canceled before they are stopped.
