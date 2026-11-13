@@ -25,11 +25,11 @@ import uuid
 import django.db
 import django_rq
 import rq.exceptions
+import rq.executions
 import rq.job
 import structlog
 
 from django.conf import settings
-from rq.registry import StartedJobRegistry
 from rq.command import send_stop_job_command
 
 from grimoirelab_toolkit.datetime import datetime_utcnow
@@ -57,6 +57,13 @@ RQ_JOB_STOPPED_STATUS = [
     rq.job.JobStatus.FAILED,
     rq.job.JobStatus.STOPPED,
     rq.job.JobStatus.CANCELED,
+]
+
+SCHEDULER_ACTIVE_STATUS = [
+    SchedulerStatus.RUNNING,
+    SchedulerStatus.RECOVERY,
+    SchedulerStatus.ENQUEUED,
+    SchedulerStatus.NEW,
 ]
 
 
@@ -115,18 +122,13 @@ def cancel_task(task_uuid: str) -> None:
 
     jobs = task.jobs.all()
     for job in jobs:
-        connection = django_rq.get_connection(task.default_job_queue)
-        try:
-            job_rq = rq.job.Job.fetch(job.uuid, connection=connection)
-        except rq.exceptions.NoSuchJobError:
-            continue
-        if job_rq.get_status() == rq.job.JobStatus.STARTED:
-            send_stop_job_command(connection, job_rq.id)
-        job_rq.delete()
-
+        # Cancel the job first, so it is already canceled
+        # when its callbacks run.
         if job.status not in (SchedulerStatus.FAILED, SchedulerStatus.COMPLETED):
             job.status = SchedulerStatus.CANCELED
             job.save()
+
+        _stop_job(job, task.default_job_queue)
 
     if task.status not in (SchedulerStatus.COMPLETED, SchedulerStatus.FAILED):
         task.status = SchedulerStatus.CANCELED
@@ -160,11 +162,11 @@ def reschedule_task(task_uuid: str) -> None:
             pass
         _schedule_job(task, job, datetime_utcnow(), job.job_args)
     elif task.status == SchedulerStatus.RUNNING:
-        # Make sure it is running
+        # Cancel the running job and force the execution
         job = task.jobs.order_by("-scheduled_at").first()
-        if _is_job_removed_or_stopped(job, task.default_job_queue):
-            job.save_run(SchedulerStatus.CANCELED)
-            _enqueue_task(task)
+        job.save_run(SchedulerStatus.CANCELED)
+        _stop_job(job, task.default_job_queue)
+        _enqueue_task(task)
     else:
         _enqueue_task(task)
 
@@ -177,16 +179,12 @@ def maintain_tasks() -> None:
     This function will check the status of the tasks and jobs
     that are scheduled, rescheduling them if necessary.
     """
-    active_status = [
-        SchedulerStatus.RUNNING,
-        SchedulerStatus.RECOVERY,
-        SchedulerStatus.ENQUEUED,
-        SchedulerStatus.NEW,
-    ]
-    tasks = find_tasks_by_status(active_status)
+    tasks = find_tasks_by_status(SCHEDULER_ACTIVE_STATUS)
 
     for task in tasks:
-        job_db = task.jobs.filter(status__in=active_status).order_by("-scheduled_at").first()
+        job_db = (
+            task.jobs.filter(status__in=SCHEDULER_ACTIVE_STATUS).order_by("-scheduled_at").first()
+        )
 
         if not job_db:
             logger.error(
@@ -207,7 +205,7 @@ def maintain_tasks() -> None:
         )
 
         current_time = datetime_utcnow()
-        scheduled_at = max(task.scheduled_at, current_time)
+        scheduled_at = max(task.scheduled_at or current_time, current_time)
 
         job_db.save_run(SchedulerStatus.CANCELED)
         _enqueue_task(task, scheduled_at=scheduled_at)
@@ -221,6 +219,10 @@ def _is_job_removed_or_stopped(job: Job, queue: str) -> bool:
 
     :param job: job to check.
     :param queue: queue where the job is enqueued.
+
+    :return: True when the job doesn't exist in RQ, has a stopped
+        status, or is started but has no alive execution; False
+        otherwise.
     """
     try:
         connection = django_rq.get_connection(queue)
@@ -228,17 +230,61 @@ def _is_job_removed_or_stopped(job: Job, queue: str) -> bool:
         status = job_rq.get_status()
         if status == rq.job.JobStatus.STARTED:
             # Sometimes, the worker may be forcibly stopped, leaving the job
-            # in the STARTED status. We need to check if the job has expired
-            # due to a missing heartbeat.
-            try:
-                expiration_date = StartedJobRegistry(queue, connection).get_expiration_time(job_rq)
-            except TypeError:
-                return True
-            return expiration_date < datetime.datetime.now()
+            # in the STARTED status. The job is stopped when none of its
+            # executions is still alive.
+            return not _job_has_alive_execution(job_rq)
         else:
             return status in RQ_JOB_STOPPED_STATUS
     except rq.exceptions.NoSuchJobError:
         return True
+
+
+def _job_has_alive_execution(job_rq: rq.job.Job) -> bool:
+    """Check if any execution of the job is still alive.
+
+    Workers store each execution of a job in Redis with an expiration
+    time that is extended on every heartbeat. When a worker stops
+    sending heartbeats, its execution expires and can't be fetched
+    anymore.
+
+    This depends on how RQ 2.x manages the executions of the jobs,
+    so it should be reviewed when RQ is upgraded.
+
+    :param job_rq: RQ job to check.
+
+    :return: True if at least one execution is alive; False otherwise.
+    """
+    for execution_id in job_rq.execution_registry.get_execution_ids():
+        try:
+            rq.executions.Execution.fetch(execution_id, job_rq.id, job_rq.connection)
+        except ValueError:
+            # The execution expired
+            continue
+        return True
+
+    return False
+
+
+def _stop_job(job: Job, queue: str) -> None:
+    """Stop the job, if it is running, and remove it from RQ.
+
+    :param job: job to stop.
+    :param queue: queue where the job is enqueued.
+    """
+    connection = django_rq.get_connection(queue)
+    try:
+        job_rq = rq.job.Job.fetch(job.uuid, connection=connection)
+    except rq.exceptions.NoSuchJobError:
+        return
+
+    if job_rq.get_status() == rq.job.JobStatus.STARTED:
+        try:
+            send_stop_job_command(connection, job_rq.id)
+        except rq.exceptions.InvalidJobOperation:
+            # No worker is executing the job
+            pass
+
+    job_rq.delete()
 
 
 def _enqueue_task(task: Task, scheduled_at: datetime.datetime | None = None) -> Job:
@@ -345,6 +391,12 @@ def _on_success_callback(
         logger.error("job not found", job_uuid=job.uuid)
         return
 
+    # The job was canceled while it was running, so the task
+    # was already re-scheduled.
+    if job_db.status not in SCHEDULER_ACTIVE_STATUS:
+        logger.warning("job no longer active; result ignored", job_uuid=job_db.uuid)
+        return
+
     job_db.save_run(
         SchedulerStatus.COMPLETED,
         progress=result,
@@ -385,6 +437,13 @@ def _on_failure_callback(
         job_db = find_job(job.id)
     except NotFoundError:
         logger.error("job not found", job_uuid=job.uuid)
+        return
+
+    # The job was canceled while it was running, so the task
+    # was already re-scheduled. This happens, for example, when
+    # RQ cleans up a job that the maintenance process canceled.
+    if job_db.status not in SCHEDULER_ACTIVE_STATUS:
+        logger.warning("job no longer active; failure ignored", job_uuid=job_db.uuid)
         return
 
     job_db.save_run(

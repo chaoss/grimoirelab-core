@@ -1,0 +1,11 @@
+---
+title: Reschedule running tasks
+category: fixed
+author: Santiago Dueñas <sduenas@grimoirelab.org>
+issue: null
+notes: >
+  Rescheduling a running task didn't stop the job that was
+  running. Depending on the state of that job, the task was
+  not rescheduled, or a new job ran at the same time as the
+  old one. The running job is now stopped and canceled before
+  a new job is scheduled.

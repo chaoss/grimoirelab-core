@@ -16,6 +16,8 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
+import django_rq
+
 from django.test import TransactionTestCase
 
 from fakeredis import FakeStrictRedis
@@ -30,6 +32,11 @@ class GrimoireLabTestCase(TransactionTestCase):
     It's a subclass of Django's TransactionTestCase that helps
     to run tests with database transactions. Also, it provides
     a Redis mock connection to run tests with a Redis database.
+
+    RQ uses its own Redis mock connection, which doesn't share
+    data with the connection of this class. Both are flushed
+    before and after each test, so the jobs created by a test
+    are not available in other tests.
     """
 
     conn = None
@@ -44,6 +51,8 @@ class GrimoireLabTestCase(TransactionTestCase):
 
     def setUp(self):
         self.conn.flushdb()
+        django_rq.get_connection().flushdb()
 
     def tearDown(self):
         self.conn.flushdb()
+        django_rq.get_connection().flushdb()

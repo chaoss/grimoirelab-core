@@ -1,0 +1,12 @@
+---
+title: Maintenance cancels running jobs
+category: fixed
+author: Santiago Dueñas <sduenas@grimoirelab.org>
+issue: null
+notes: >
+  The maintenance process considered that every running job
+  was stopped, because the check was not compatible with the
+  way RQ 2.x stores running jobs. These jobs were canceled
+  and a duplicate job was scheduled for the same task.
+  The process also crashed when a task to re-schedule didn't
+  have a scheduled time.
