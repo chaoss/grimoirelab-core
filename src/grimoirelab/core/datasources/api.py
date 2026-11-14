@@ -24,6 +24,7 @@ from rest_framework import (
     response,
     serializers,
     status,
+    views,
 )
 from drf_spectacular.utils import (
     extend_schema,
@@ -35,6 +36,8 @@ from drf_spectacular.types import OpenApiTypes
 from django.db.models import Q
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from grimoirelab_toolkit.datetime import str_to_datetime, InvalidDateError
+from rest_framework.exceptions import ValidationError
 
 from .models import (
     DataSet,
@@ -43,6 +46,7 @@ from .models import (
     Project,
 )
 from .utils import generate_uuid
+from .events import get_events
 from ..scheduler.api import EventizerTaskSerializer
 from ..scheduler.scheduler import schedule_task, cancel_task
 
@@ -287,7 +291,7 @@ class RepoList(generics.ListCreateAPIView):
             name=self.kwargs.get("project_name"),
             ecosystem__name=self.kwargs.get("ecosystem_name"),
         )
-        queryset = Repository.objects.filter(dataset__project=project).distinct()
+        queryset = Repository.objects.filter(dataset__project=project).distinct().order_by("pk")
 
         datasource = self.request.query_params.get("datasource_type")
         category = self.request.query_params.get("category")
@@ -512,3 +516,135 @@ class ProjectChildrenList(generics.ListAPIView):
         context = super().get_serializer_context()
         context.update({"project_id": self.project.id})
         return context
+
+
+class ProjectEventList(views.APIView):
+    """API endpoint that allows to get the latest events for a given project."""
+
+    def get(self, request, ecosystem_name, project_name):
+        event_type = request.query_params.get("type", None)
+        from_date = request.query_params.get("from_date", None)
+        to_date = request.query_params.get("to_date", None)
+        page = request.query_params.get("page", 1)
+        size = request.query_params.get("size", 25)
+
+        # Validate page and size parameters
+        try:
+            page = int(page)
+            size = int(size)
+        except ValueError:
+            raise ValidationError("Page must be an integer.")
+        if page < 1:
+            raise ValidationError("Page must be greater than 0.")
+        if size < 1 or size > 100:
+            raise ValidationError("Size must be between 1 and 100.")
+
+        # Parse from_date and to_date
+        from_date_parsed = None
+        to_date_parsed = None
+        try:
+            if from_date:
+                from_date_parsed = str_to_datetime(from_date)
+            if to_date:
+                to_date_parsed = str_to_datetime(to_date)
+        except InvalidDateError:
+            raise ValidationError("from_date and to_date must be in a valid datetime format.")
+
+        # Obtain the repository sources for the given project
+        project = get_object_or_404(
+            Project,
+            name=project_name,
+            ecosystem__name=ecosystem_name,
+        )
+        queryset = (
+            Repository.objects.filter(dataset__project=project)
+            .distinct()
+            .values_list("uri", flat=True)
+        )
+        sources = list(queryset)
+
+        events = get_events(
+            sources=sources,
+            event_type=event_type,
+            from_date=from_date_parsed,
+            to_date=to_date_parsed,
+            page=page,
+            size=size,
+        )
+        total = events.hits.total.value
+
+        return response.Response(
+            {
+                "count": total,
+                "page": page,
+                "total_pages": (total + size - 1) // size,
+                "results": [hit.to_dict() for hit in events],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class RepoEventList(views.APIView):
+    """API endpoint that allows to get the latest events for a given repository."""
+
+    def get(self, request, ecosystem_name, project_name, uuid):
+        event_type = request.query_params.get("type", None)
+        from_date = request.query_params.get("from_date", None)
+        to_date = request.query_params.get("to_date", None)
+        page = request.query_params.get("page", 1)
+        size = request.query_params.get("size", 25)
+
+        # Validate page and size parameters
+        try:
+            page = int(page)
+            size = int(size)
+        except ValueError:
+            raise ValidationError("Page must be an integer.")
+        if page < 1:
+            raise ValidationError("Page must be greater than 0.")
+        if size < 1 or size > 100:
+            raise ValidationError("Size must be between 1 and 100.")
+
+        # Parse from_date and to_date
+        from_date_parsed = None
+        to_date_parsed = None
+        try:
+            if from_date:
+                from_date_parsed = str_to_datetime(from_date)
+            if to_date:
+                to_date_parsed = str_to_datetime(to_date)
+        except InvalidDateError:
+            raise ValidationError("from_date and to_date must be in a valid datetime format.")
+
+        # Obtain the repository source for the given repository
+        project = get_object_or_404(
+            Project,
+            name=project_name,
+            ecosystem__name=ecosystem_name,
+        )
+        repository = get_object_or_404(
+            Repository,
+            uuid=uuid,
+            dataset__project=project,
+        )
+        source = repository.uri
+
+        events = get_events(
+            sources=[source],
+            event_type=event_type,
+            from_date=from_date_parsed,
+            to_date=to_date_parsed,
+            page=page,
+            size=size,
+        )
+        total = events.hits.total.value
+
+        return response.Response(
+            {
+                "count": total,
+                "page": page,
+                "total_pages": (total + size - 1) // size,
+                "results": [hit.to_dict() for hit in events],
+            },
+            status=status.HTTP_200_OK,
+        )

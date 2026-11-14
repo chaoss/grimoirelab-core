@@ -16,7 +16,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
@@ -1387,3 +1387,123 @@ class ProjectChildrenApiTest(APITestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["detail"], "Authentication credentials were not provided.")
+
+
+class RepoProjectEventsApiTest(APITestCase):
+    """Unit tests for the RepoEventList and ProjectEventList API endpoints"""
+
+    def setUp(self):
+        user = get_user_model().objects.create(username="test", is_superuser=True)
+        self.client.force_authenticate(user=user)
+        self.ecosystem = Ecosystem.objects.create(name="ecosystem1", title="Ecosystem 1")
+        self.project = Project.objects.create(
+            name="example-project", title="Example Project", ecosystem=self.ecosystem
+        )
+        self.repository = Repository.objects.create(
+            uuid="AAA", uri="https://example.com/repo.git", datasource_type="git"
+        )
+        DataSet.objects.create(
+            project=self.project, repository=self.repository, category="category1"
+        )
+
+    def _make_mock_events(self, count, total):
+        """Helper method to create a list of mock events"""
+
+        mock_events = MagicMock()
+        mock_events.hits = MagicMock()
+        mock_events.hits.total = MagicMock()
+        mock_events.hits.total.value = total
+
+        mock_events.__iter__.return_value = [
+            MagicMock(to_dict=MagicMock(return_value={"id": f"event-{i}"})) for i in range(count)
+        ]
+
+        return mock_events
+
+    @patch("grimoirelab.core.datasources.api.get_events")
+    def test_repo_events_success(self, mock_get_events):
+        """Test successful retrieval of repo events"""
+
+        mock_events = self._make_mock_events(count=5, total=10)
+        mock_get_events.return_value = mock_events
+
+        url = reverse(
+            "repo-events",
+            kwargs={
+                "ecosystem_name": self.ecosystem.name,
+                "project_name": self.project.name,
+                "uuid": self.repository.uuid,
+            },
+        )
+        response = self.client.get(url, {"page": 1, "size": 5, "from_date": "2023-01-01"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 10)
+        self.assertEqual(response.data["page"], 1)
+        self.assertEqual(response.data["total_pages"], 2)
+        self.assertEqual(len(response.data["results"]), 5)
+
+        for i in range(5):
+            self.assertEqual(response.data["results"][i]["id"], f"event-{i}")
+
+    def test_repo_events_invalid_page_and_size(self):
+        """Test validation errors for non-integer page/size and out-of-range size"""
+
+        url = reverse(
+            "repo-events",
+            kwargs={
+                "ecosystem_name": self.ecosystem.name,
+                "project_name": self.project.name,
+                "uuid": self.repository.uuid,
+            },
+        )
+
+        # Non-integer page
+        response = self.client.get(url, {"page": "not-an-int"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Page less than 1
+        response = self.client.get(url, {"page": 0})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Size out of bounds (too large)
+        response = self.client.get(url, {"size": 101})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_repo_events_invalid_date(self):
+        """Test that invalid date formats raise a validation error"""
+
+        url = reverse(
+            "repo-events",
+            kwargs={
+                "ecosystem_name": self.ecosystem.name,
+                "project_name": self.project.name,
+                "uuid": self.repository.uuid,
+            },
+        )
+
+        response = self.client.get(url, {"from_date": "invalid-date-format"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("grimoirelab.core.datasources.api.get_events")
+    def test_project_events_success(self, mock_get_events):
+        """Test successful retrieval of project events"""
+
+        mock_events = self._make_mock_events(count=5, total=10)
+        mock_get_events.return_value = mock_events
+
+        url = reverse(
+            "project-events",
+            kwargs={
+                "ecosystem_name": self.ecosystem.name,
+                "project_name": self.project.name,
+            },
+        )
+        response = self.client.get(url, {"page": 1, "size": 5, "from_date": "2023-01-01"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 10)
+        self.assertEqual(response.data["page"], 1)
+        self.assertEqual(response.data["total_pages"], 2)
+        self.assertEqual(len(response.data["results"]), 5)
+
+        for i in range(5):
+            self.assertEqual(response.data["results"][i]["id"], f"event-{i}")
