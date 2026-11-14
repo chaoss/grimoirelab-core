@@ -28,6 +28,8 @@ import perceval.backend
 import perceval.backends
 import chronicler.eventizer
 
+from urllib.parse import urlparse
+from django.conf import settings
 from grimoirelab_toolkit.datetime import str_to_datetime
 
 from ...scheduler.errors import NotFoundError
@@ -76,6 +78,12 @@ def chronicler_job(
         raise NotFoundError(element=datasource_type)
 
     backend_args = job_args.copy() if job_args else {}
+
+    # Convert common datetime arguments
+    datetime_args = ["from_date", "to_date"]
+    for arg in datetime_args:
+        if arg in backend_args and isinstance(backend_args[arg], str):
+            backend_args[arg] = str_to_datetime(backend_args[arg])
 
     # Get the generator to fetch the data items
     perceval_gen = perceval.backend.BackendItemsGenerator(
@@ -222,7 +230,7 @@ class ChroniclerArgumentGenerator:
         params = {}
 
         if progress.summary and progress.summary.fetched > 0:
-            params["from_date"] = progress.summary.max_updated_on
+            params["from_date"] = progress.summary.max_updated_on.isoformat()
 
             if progress.summary.max_offset:
                 params["offset"] = progress.summary.max_offset
@@ -239,12 +247,13 @@ class ChroniclerArgumentGenerator:
         return ChroniclerArgumentGenerator.resuming_args(task_args, progress)
 
 
-def get_chronicler_argument_generator(name: str) -> ChroniclerArgumentGenerator:
+def get_chronicler_argument_generator(name: str) -> type[ChroniclerArgumentGenerator]:
     """Get the argument generator for a backend."""
 
     generators = {
         "git": GitArgumentGenerator,
         "github": GitHubArgumentGenerator,
+        "gitlab": GitLabArgumentGenerator,
     }
     return generators.get(name.lower(), ChroniclerArgumentGenerator)
 
@@ -359,7 +368,76 @@ class GitHubArgumentGenerator(ChroniclerArgumentGenerator):
         return job_args
 
 
-class GitLabArgumentGenerator(GitHubArgumentGenerator):
+class GitLabArgumentGenerator(ChroniclerArgumentGenerator):
     """Chronicler argument generator for GitLab."""
 
-    pass
+    @staticmethod
+    def initial_args(task_args: dict[str, Any]) -> dict[str, Any]:
+        """GitLab initial arguments."""
+
+        # For the first execution make some arguments mandatory
+        job_args = {}
+
+        domain, owner, repo = GitLabArgumentGenerator.parse_url(task_args["uri"])
+
+        job_args["owner"] = owner
+        job_args["repository"] = repo
+        if domain != "gitlab.com":
+            job_args["enterprise_url"] = f"https://{domain}"
+
+        # TODO: Obtain tokens from a secure storage
+        tokens = task_args.get("api_token", settings.GRIMOIRELAB_GITLAB_TOKENS)[0]
+
+        job_args["api_token"] = tokens
+        job_args["sleep_for_rate"] = True
+
+        return job_args
+
+    @staticmethod
+    def parse_url(url: str) -> tuple[str, str, str]:
+        """Parse GitLab URL to Perceval format.
+
+        If a given GitLab repository is under more than 1 level,
+        all the slashes starting from the second level have to be
+        replaced by `%2F`.
+
+        :param url: GitLab repository URL
+        :return: A tuple with (domain, owner, repository)
+        """
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.split("/") if p]
+        if len(parts) < 2:
+            raise ValueError(f"Invalid GitLab URL: {url}")
+
+        domain = parsed.netloc
+        owner = parts[0]
+        repo = "%2F".join(parts[1:]).removesuffix(".git")
+
+        return domain, owner, repo
+
+    @staticmethod
+    def resuming_args(
+        task_args: dict[str, Any] | None,
+        progress: ChroniclerProgress,
+    ) -> dict[str, Any]:
+        """GitHub resuming arguments."""
+
+        job_args = task_args.copy() if task_args else {}
+        job_args["sleep_for_rate"] = True
+        job_args["from_date"] = progress.summary.last_updated_on.isoformat()
+
+        return job_args
+
+    @staticmethod
+    def recovery_args(
+        task_args: dict[str, Any],
+        progress: ChroniclerProgress,
+    ) -> dict[str, Any]:
+        """GitHub recovery arguments."""
+
+        job_args = task_args.copy() if task_args else {}
+
+        if progress.summary and progress.summary.last_updated_on:
+            job_args["from_date"] = progress.summary.last_updated_on.isoformat()
+
+        return job_args
