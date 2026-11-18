@@ -89,7 +89,7 @@ class SortingHatConsumer(Consumer):
                 continue
 
             identity = entry.event.get("data", {})
-            source = identity.get("source")
+            source = identity.get("datasource")
             username = identity.get("username")
             email = identity.get("email")
             name = identity.get("name")
