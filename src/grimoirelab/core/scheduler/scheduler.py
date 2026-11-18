@@ -284,18 +284,26 @@ def _schedule_job(
 
     queue = task.default_job_queue
 
+    job_kwargs = {
+        "result_ttl": settings.GRIMOIRELAB_JOB_RESULT_TTL,
+        "job_timeout": settings.GRIMOIRELAB_JOB_TIMEOUT,
+        "on_success": rq.job.Callback(task.on_success_callback),
+        "on_failure": rq.job.Callback(task.on_failure_callback),
+        "job_id": job.uuid,
+    }
+
     try:
         queue_rq = django_rq.get_queue(queue)
-        rq_job = queue_rq.enqueue_at(
-            datetime=scheduled_at,
-            f=task.job_function,
-            result_ttl=settings.GRIMOIRELAB_JOB_RESULT_TTL,
-            job_timeout=settings.GRIMOIRELAB_JOB_TIMEOUT,
-            on_success=rq.job.Callback(task.on_success_callback),
-            on_failure=rq.job.Callback(task.on_failure_callback),
-            job_id=job.uuid,
-            **job_args,
-        )
+
+        # Jobs that must run now are added to the queue directly.
+        # RQ < 3.0 can lose jobs added to the scheduled registry with
+        # a time that has already passed: the RQ scheduler can read
+        # the job id before the job is stored in Redis, and then it
+        # removes the id from the registry without enqueuing the job.
+        if scheduled_at <= datetime_utcnow():
+            rq_job = queue_rq.enqueue(task.job_function, **job_kwargs, **job_args)
+        else:
+            rq_job = queue_rq.enqueue_at(scheduled_at, task.job_function, **job_kwargs, **job_args)
 
         job.status = SchedulerStatus.ENQUEUED
         task.status = SchedulerStatus.ENQUEUED
