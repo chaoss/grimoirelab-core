@@ -1,0 +1,11 @@
+---
+title: Identities from events with the data source renamed
+category: fixed
+author: Santiago Dueñas <sduenas@grimoirelab.org>
+issue: null
+notes: >
+  The identities were not stored in SortingHat when the events came
+  from a version of chronicler that names the data source `datasource`
+  in the data of the identity events. The consumer looked for the
+  data source with the old name, `source`, so it found none and skipped
+  them. It now uses the name `datasource`.

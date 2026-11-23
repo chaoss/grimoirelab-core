@@ -94,9 +94,9 @@ class TestSortingHatConsumer(GrimoireLabTestCase):
                     "id": "event_1",
                     "type": GIT_EVENT_COMMIT_AUTHORED_BY,
                     "source": "https://github.com/chaoss/example.git",
-                    "linked_event": "commit_12345",
+                    "linkedevent": "commit_12345",
                     "data": {
-                        "source": "git",
+                        "datasource": "git",
                         "username": "johndoe",
                         "email": "johndoe@example.com",
                         "name": None,
@@ -111,9 +111,9 @@ class TestSortingHatConsumer(GrimoireLabTestCase):
                     "id": "event_2",
                     "type": GIT_EVENT_COMMIT_COMMITTED_BY,
                     "source": "https://github.com/chaoss/example.git",
-                    "linked_event": "commit_12345",
+                    "linkedevent": "commit_12345",
                     "data": {
-                        "source": "git",
+                        "datasource": "git",
                         "username": "janedoe",
                         "email": "janedoe@example.com",
                         "name": "Jane Doe",
