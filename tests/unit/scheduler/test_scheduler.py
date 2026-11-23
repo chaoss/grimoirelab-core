@@ -283,6 +283,46 @@ class TestScheduleTask(GrimoireLabTestCase):
             task = SchedulerTestTask.create_task(task_args, 360, 10)
             _enqueue_task(task, scheduled_at=None)
 
+    def test_enqueue_task_now(self):
+        """Jobs scheduled to run now are added to the queue directly"""
+
+        task_args = {
+            "a": 1,
+            "b": 2,
+        }
+        task = SchedulerTestTask.create_task(task_args, 360, 10)
+        job = _enqueue_task(task, scheduled_at=None)
+
+        queue_rq = django_rq.get_queue(job.queue)
+        self.addCleanup(queue_rq.connection.flushdb)
+
+        self.assertIn(job.uuid, queue_rq.job_ids)
+        self.assertNotIn(job.uuid, queue_rq.scheduled_job_registry.get_job_ids())
+
+        job_rq = rq.job.Job.fetch(job.uuid, connection=queue_rq.connection)
+        self.assertEqual(job_rq.get_status(), rq.job.JobStatus.QUEUED)
+
+    def test_enqueue_task_future(self):
+        """Jobs scheduled to run in the future are added to the scheduled registry"""
+
+        task_args = {
+            "a": 1,
+            "b": 2,
+        }
+        scheduled_at = datetime.datetime(2100, 1, 1, tzinfo=datetime.timezone.utc)
+
+        task = SchedulerTestTask.create_task(task_args, 360, 10)
+        job = _enqueue_task(task, scheduled_at=scheduled_at)
+
+        queue_rq = django_rq.get_queue(job.queue)
+        self.addCleanup(queue_rq.connection.flushdb)
+
+        self.assertNotIn(job.uuid, queue_rq.job_ids)
+        self.assertIn(job.uuid, queue_rq.scheduled_job_registry.get_job_ids())
+
+        job_rq = rq.job.Job.fetch(job.uuid, connection=queue_rq.connection)
+        self.assertEqual(job_rq.get_status(), rq.job.JobStatus.SCHEDULED)
+
 
 class TestMaintainTasks(GrimoireLabTestCase):
     """Class for testing the maintenance of tasks"""
@@ -354,18 +394,35 @@ class TestMaintainTasks(GrimoireLabTestCase):
         self.assertEqual(job_rq.id, job_db.uuid)
 
     def test_maintain_tasks_reschedule_multiple_jobs(self):
-        """Tasks with multiple finished jobs are re-scheduled"""
+        """Tasks with multiple finished jobs are re-scheduled
+
+        The task uses 'job_interval=0', so every time a job finishes,
+        the next job is added to the queue directly to run immediately.
+        A burst worker only stops when the queue is empty, so it would
+        run jobs forever. 'max_jobs' limits the number of jobs the
+        worker runs.
+
+        The RQ connection is a singleton that 'GrimoireLabTestCase'
+        doesn't flush, so jobs created by other tests can still be in
+        the queue. The connection is flushed before running the test,
+        so the worker only runs the jobs of this task. Otherwise, the
+        worker would spend 'max_jobs' running those jobs.
+        """
 
         task_args = {
             "a": 1,
             "b": 2,
         }
 
+        # Remove jobs left by other tests
+        connection = django_rq.get_connection()
+        connection.flushdb()
+        self.addCleanup(connection.flushdb)
+
+        # Limit the jobs to run because they are re-scheduled immediately
         task = schedule_task("callback_test_task", task_args, job_interval=0)
         worker = django_rq.workers.get_worker(task.default_job_queue)
-        worker.work(burst=True, with_scheduler=True)
-        worker.work(burst=True, with_scheduler=True)
-        worker.work(burst=True, with_scheduler=True)
+        worker.work(burst=True, with_scheduler=True, max_jobs=3)
 
         # Three jobs were processed and one is still pending
         self.assertEqual(task.jobs.count(), 4)
@@ -389,7 +446,7 @@ class TestMaintainTasks(GrimoireLabTestCase):
         job_rq = rq.job.Job.fetch(job_db.uuid, connection=django_rq.get_connection())
         self.assertEqual(job_rq.id, job_db.uuid)
 
-        worker.work(burst=True, with_scheduler=True)
+        worker.work(burst=True, with_scheduler=True, max_jobs=1)
         self.assertEqual(task.jobs.count(), 6)
 
     def test_maintain_tasks_reschedule_expired_scheduled_at(self):
