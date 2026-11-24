@@ -67,9 +67,9 @@ export default {
           this.$router.push(this.$route.query.redirect ?? { name: 'home' })
         }
       } catch (error) {
-        if (error.response.data.detail) {
+        if (error.response?.data?.detail) {
           this.errorMessage = error.response.data.detail
-        } else if (error.response.data.errors) {
+        } else if (error.response?.data?.errors) {
           this.errorMessage = error.response.data.errors
         } else {
           this.errorMessage = error.message

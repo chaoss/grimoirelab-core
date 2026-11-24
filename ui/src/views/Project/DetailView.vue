@@ -145,7 +145,7 @@ async function fetchProject(name) {
     if (error.response?.status === 404) {
       router.push({ name: 'notFound' })
     }
-    const message = error.response.data.detail ? error.response.data.detail : error.toString()
+    const message = error.response?.data?.detail ? error.response.data.detail : error.toString()
     Object.assign(alert.value, { isOpen: true, text: message })
   }
 }
@@ -155,7 +155,7 @@ async function deleteProject(name) {
     await API.project.delete(route.query.ecosystem, name)
     router.replace({ name: 'ecosystems', query: { ecosystem: route.query.ecosystem } })
   } catch (error) {
-    const message = error.response?.data.detail ? error.response.data.detail : error.toString()
+    const message = error.response?.data?.detail ? error.response.data.detail : error.toString()
     Object.assign(alert.value, { isOpen: true, text: message })
   }
 }

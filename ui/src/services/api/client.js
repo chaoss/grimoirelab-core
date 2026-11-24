@@ -20,7 +20,7 @@ client.interceptors.response.use(
     return response
   },
   function (error) {
-    if (error.response.status === 403 && error.response.data.detail === AUTHENTICATION_ERROR) {
+    if (error.response?.status === 403 && error.response.data?.detail === AUTHENTICATION_ERROR) {
       const userStore = useUserStore()
       userStore.logOutUser({
         redirect:
