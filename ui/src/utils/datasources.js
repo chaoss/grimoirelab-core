@@ -16,8 +16,8 @@ const guessDatasource = async (repository) => {
 
   if (pypiRegex) {
     const response = await axios.get(`https://pypi.org/pypi/${pypiRegex[1]}/json`)
-    if (response.info.project_urls['Repository']) {
-      repository = response.info.project_urls['Repository']
+    if (response.data.info?.project_urls?.Repository) {
+      repository = response.data.info.project_urls.Repository
     }
   } else if (npmPackageRegex) {
     const response = await axios.get(
