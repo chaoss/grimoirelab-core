@@ -22,6 +22,7 @@ import os
 import pickle
 import shutil
 import tempfile
+from unittest.mock import patch
 
 import rq
 import perceval.backend
@@ -44,7 +45,7 @@ class TestChroniclerJob(GrimoireLabTestCase):
         shutil.rmtree(self.tmp_path)
         super().tearDown()
 
-    def test_job(self):
+    def test_git_job(self):
         """Test if events are generated using the Git backend"""
 
         job_args = {
@@ -204,6 +205,69 @@ class TestChroniclerJob(GrimoireLabTestCase):
             self.assertEqual(event["id"], expected[i][0])
             self.assertEqual(event["type"], expected[i][1])
             self.assertEqual(event["source"], "http://example.com/")
+
+    @patch("grimoirelab.core.scheduler.tasks.chronicler.perceval.backend.BackendItemsGenerator")
+    def test_gitlab_job(self, mock_backend_items_generator):
+        """Test if events are generated using the GitLab backend"""
+
+        with open(os.path.join(self.dir, "data/gitlab_issues.json"), "r") as f:
+            gitlab_issues_data = json.load(f)
+
+        # Return value under .items
+        mock_backend_items_generator.return_value.items = gitlab_issues_data
+
+        job_args = {
+            "datasource_type": "gitlab",
+            "datasource_category": "issue",
+            "events_stream": "events",
+            "stream_max_length": 500,
+            "job_args": {
+                "owner": "user_1",
+                "repository": "tmp",
+                "from_date": "2020-01-01T00:00:00Z",
+            },
+        }
+
+        q = rq.Queue("test-queue", job_class=GrimoireLabJob, connection=self.conn, is_async=False)
+        job = q.enqueue(
+            f=chronicler_job,
+            result_ttl=100,
+            job_timeout=120,
+            job_id="chonicler-gitlab",
+            **job_args,
+        )
+
+        # Use job._result instead of job.return_value() because
+        # the mocked backend fail to produce a return value
+        result = job._result
+
+        # Check job result
+        self.assertEqual(result.job_id, job.get_id())
+        self.assertEqual(result.backend, "gitlab")
+        self.assertEqual(result.category, "issue")
+
+        expected = [
+            ("cbd19489e7812e32f5f26473e202af1a892c0a65", "org.grimoirelab.events.gitlab.issue"),
+            ("a1d20ee20e89c4ab33e4a17725ec4f002e9882ec", "org.grimoirelab.events.gitlab.author"),
+            ("a99cf7a6861409aba3c32c28558cbc97db4a02bf", "org.grimoirelab.events.gitlab.closed_by"),
+            ("8ea9a635f395f8dadafd932c59b1e42e754eefd0", "org.grimoirelab.events.gitlab.issue"),
+            ("4a9a2876cc746cfc993cf659a1702ccaca331c27", "org.grimoirelab.events.gitlab.author"),
+            ("9d47dbbd2df9579269d1d409548d04c51cf1f0b9", "org.grimoirelab.events.gitlab.issue"),
+            ("8ab2b765e2b5322e1b6186ff3fc38e47dc87e65e", "org.grimoirelab.events.gitlab.author"),
+            ("be4e5be81c88ad0c9735f6a591a265373308405b", "org.grimoirelab.events.gitlab.assignee"),
+            ("753f641525292d18618695f3c4ea7d36a9253fce", "org.grimoirelab.events.gitlab.issue"),
+            ("4c7134547d2f6d4dbdb8231222e35606095db45e", "org.grimoirelab.events.gitlab.author"),
+            ("16015c50f2e11af6cc2c8bfcf5df4494abd1b1e0", "org.grimoirelab.events.gitlab.assignee"),
+        ]
+
+        # Check generated events
+        events = self.conn.xread({"events": b"0-0"}, count=None, block=0)
+        events = [json.loads(e[1][b"data"]) for e in events[0][1]]
+        self.assertEqual(len(events), 11)
+        for i, event in enumerate(events):
+            self.assertEqual(event["source"], "https://gitlab.com/user_1/tmp")
+            self.assertEqual(event["id"], expected[i][0])
+            self.assertEqual(event["type"], expected[i][1])
 
     def test_job_no_result(self):
         """Execute a job that will not produce any results"""

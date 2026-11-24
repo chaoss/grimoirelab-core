@@ -19,7 +19,7 @@
           <v-col cols="6">
             <v-select
               v-model="formData.datasource_type"
-              :items="['git']"
+              :items="datasourceOptions"
               color="primary"
               label="Backend"
               hide-details
@@ -29,7 +29,7 @@
           <v-col cols="6">
             <v-select
               v-model="formData.category"
-              :items="['commit']"
+              :items="categoryOptions"
               color="primary"
               label="Category"
               hide-details
@@ -85,6 +85,30 @@ export default {
         }
       },
       customInterval: ''
+    }
+  },
+  computed: {
+    datasourceOptions() {
+      return ['git', 'gitlab']
+    },
+    categoryOptions() {
+      const type = this.formData && this.formData.datasource_type
+      if (type === 'git') {
+        return ['commit']
+      } else if (type === 'gitlab') {
+        return ['issue']
+      } else {
+        return ['commit']
+      }
+    }
+  },
+  watch: {
+    // when datasource_type changes, ensure category stays valid
+    'formData.datasource_type': function (newVal) {
+      const opts = this.categoryOptions || []
+      if (!opts.includes(this.formData.category)) {
+        this.formData.category = opts[0] || ''
+      }
     }
   },
   methods: {
