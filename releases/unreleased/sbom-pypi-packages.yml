@@ -1,0 +1,11 @@
+---
+title: SBoM files with PyPI packages failing to load
+category: fixed
+author: Tanmay Baranwal <baranwaltanmay16@gmail.com>
+issue: null
+notes: >
+  Loading an SBoM file that listed a package hosted on PyPI failed
+  with `Cannot read properties of undefined (reading 'project_urls')`,
+  so none of its repositories were shown. The UI read the package
+  metadata from the response object instead of its body. It now
+  reads the body and skips packages without a `Repository` URL.

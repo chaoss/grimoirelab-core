@@ -93,9 +93,11 @@ describe('utils/guessDatasource', () => {
 
   test('Returns GitHub repo from PyPI', async () => {
     axios.get.mockReturnValue({
-      info: {
-        project_urls: {
-          Repository: 'https://github.com/chaoss/grimoirelab-toolkit'
+      data: {
+        info: {
+          project_urls: {
+            Repository: 'https://github.com/chaoss/grimoirelab-toolkit'
+          }
         }
       }
     })
@@ -107,9 +109,11 @@ describe('utils/guessDatasource', () => {
 
   test('Returns GitLab repo from PyPI', async () => {
     axios.get.mockReturnValue({
-      info: {
-        project_urls: {
-          Repository: 'https://gitlab.com/example/gitlab'
+      data: {
+        info: {
+          project_urls: {
+            Repository: 'https://gitlab.com/example/gitlab'
+          }
         }
       }
     })
@@ -117,6 +121,22 @@ describe('utils/guessDatasource', () => {
     const result = guessDatasource('https://pypi.org/project/example-gitlab')
     expect((await result).datasource).toBe('gitlab')
     expect((await result).url).toBe('https://gitlab.com/example/gitlab')
+  })
+
+  test('Does not return a repo for a PyPI package without one', async () => {
+    axios.get.mockReturnValue({
+      data: {
+        info: {
+          project_urls: {
+            Homepage: 'https://example.com/docs'
+          }
+        }
+      }
+    })
+    expect(await guessDatasource('https://pypi.org/project/example')).toBeUndefined()
+
+    axios.get.mockReturnValue({ data: { info: { project_urls: null } } })
+    expect(await guessDatasource('https://pypi.org/project/example')).toBeUndefined()
   })
 
   test('Does not return an invalid repo', async () => {
