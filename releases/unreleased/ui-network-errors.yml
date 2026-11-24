@@ -1,0 +1,12 @@
+---
+title: Network errors hidden in the UI
+category: fixed
+author: Tanmay Baranwal <baranwaltanmay16@gmail.com>
+issue: null
+notes: >
+  When the API could not be reached, the UI did not show any error.
+  The response interceptor and the sign-in and project pages
+  expected every failed request to include a response, so they
+  failed with a `TypeError` when there was none. They now handle
+  errors without a response, and the sign-in page shows
+  `Network Error` when the server is unreachable.
